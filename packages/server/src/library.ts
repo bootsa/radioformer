@@ -1,0 +1,113 @@
+import type { DatabaseSync } from 'node:sqlite';
+import { Station, type LibraryReader } from '@radioformer/core';
+
+interface Row {
+  id: number;
+  name: string;
+  stream_url: string;
+  logo_id: number | null;
+  description: string;
+  country: string;
+  language: string;
+  tags: string;
+  transformer: string;
+  proxy_mode: string;
+  collection: string;
+}
+
+const toStation = (r: Row): Station =>
+  Station.parse({
+    id: r.id,
+    name: r.name,
+    streamUrl: r.stream_url,
+    logoId: r.logo_id,
+    description: r.description,
+    country: r.country,
+    language: r.language,
+    tags: JSON.parse(r.tags) as string[],
+    transformer: r.transformer,
+    proxyMode: r.proxy_mode,
+    collection: r.collection,
+  });
+
+export type NewStation = Omit<Station, 'id'>;
+export const NewStation = Station.omit({ id: true });
+
+export interface RadioRow {
+  id: number;
+  mac: string;
+  label: string;
+  firstSeen: string;
+  lastSeen: string;
+  lastIp: string;
+}
+
+/** The station library and the list of radios, stored in SQLite. */
+export class SqliteLibrary implements LibraryReader {
+  readonly #db: DatabaseSync;
+
+  constructor(db: DatabaseSync) {
+    this.#db = db;
+  }
+
+  listStations(collection?: string): Station[] {
+    const rows = (
+      collection === undefined
+        ? this.#db.prepare('SELECT * FROM station ORDER BY name COLLATE NOCASE')
+        : this.#db.prepare('SELECT * FROM station WHERE collection = ? ORDER BY name COLLATE NOCASE')
+    ).all(...(collection === undefined ? [] : [collection])) as unknown as Row[];
+    return rows.map(toStation);
+  }
+
+  getStation(id: number): Station | null {
+    const row = this.#db.prepare('SELECT * FROM station WHERE id = ?').get(id) as unknown as Row | undefined;
+    return row ? toStation(row) : null;
+  }
+
+  listCollections(): string[] {
+    const rows = this.#db
+      .prepare("SELECT DISTINCT collection FROM station WHERE collection <> '' ORDER BY collection COLLATE NOCASE")
+      .all() as unknown as { collection: string }[];
+    return rows.map((r) => r.collection);
+  }
+
+  createStation(s: NewStation): Station {
+    const res = this.#db
+      .prepare(
+        `INSERT INTO station (name, stream_url, logo_id, description, country, language, tags, transformer, proxy_mode, collection)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(s.name, s.streamUrl, s.logoId, s.description, s.country, s.language, JSON.stringify(s.tags), s.transformer, s.proxyMode, s.collection);
+    return this.getStation(Number(res.lastInsertRowid))!;
+  }
+
+  updateStation(id: number, s: NewStation): Station | null {
+    const res = this.#db
+      .prepare(
+        `UPDATE station SET name=?, stream_url=?, logo_id=?, description=?, country=?, language=?, tags=?, transformer=?, proxy_mode=?, collection=? WHERE id=?`,
+      )
+      .run(s.name, s.streamUrl, s.logoId, s.description, s.country, s.language, JSON.stringify(s.tags), s.transformer, s.proxyMode, s.collection, id);
+    return res.changes > 0 ? this.getStation(id) : null;
+  }
+
+  deleteStation(id: number): boolean {
+    return this.#db.prepare('DELETE FROM station WHERE id = ?').run(id).changes > 0;
+  }
+
+  /** Records a sighting of a radio; creates the row on first contact. */
+  touchRadio(mac: string, ip: string): void {
+    this.#db
+      .prepare(
+        `INSERT INTO radio (mac, last_ip) VALUES (?, ?)
+         ON CONFLICT(mac) DO UPDATE SET last_seen = datetime('now'), last_ip = excluded.last_ip`,
+      )
+      .run(mac, ip);
+  }
+
+  listRadios(): RadioRow[] {
+    const rows = this.#db.prepare('SELECT * FROM radio ORDER BY last_seen DESC').all() as unknown as {
+      id: number; mac: string; label: string; first_seen: string; last_seen: string; last_ip: string;
+    }[];
+    return rows.map((r) => ({ id: r.id, mac: r.mac, label: r.label, firstSeen: r.first_seen, lastSeen: r.last_seen, lastIp: r.last_ip }));
+  }
+}

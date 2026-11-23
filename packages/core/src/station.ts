@@ -15,5 +15,7 @@ export const Station = z.object({
   tags: z.array(z.string().max(40)).default([]),
   transformer: z.string().max(40).default('none'),
   proxyMode: ProxyMode.default('auto'),
+  /** Folder shown on the radio and in the web app; empty means none. */
+  collection: z.string().max(100).default(''),
 });
 export type Station = z.infer<typeof Station>;

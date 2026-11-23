@@ -1,8 +1,12 @@
+import { join } from 'node:path';
 import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
+import { openDb } from './db.ts';
+import { SqliteLibrary } from './library.ts';
 
 const config = loadConfig();
-const app = await buildApp(config);
+const library = new SqliteLibrary(openDb(join(config.DATA_DIR, 'radioformer.db')));
+const app = await buildApp(config, library);
 
 const stop = async () => {
   await app.close();

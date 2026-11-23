@@ -20,7 +20,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @radioformer/core build
+      - run: pnpm -r --filter "./packages/*" build
       - run: scripts/ci-run.sh check pnpm -r check
       - run: scripts/ci-run.sh test pnpm -r test
       - run: scripts/ci-run.sh web-build pnpm --filter web build

@@ -12,13 +12,14 @@ WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/web/package.json apps/web/
 COPY packages/core/package.json packages/core/
+COPY packages/stream/package.json packages/stream/
+COPY packages/protocol-xml/package.json packages/protocol-xml/
 COPY packages/server/package.json packages/server/
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.base.json ./
 COPY apps ./apps
 COPY packages ./packages
-RUN pnpm --filter @radioformer/core build \
- && pnpm --filter @radioformer/server build \
+RUN pnpm -r --filter "./packages/*" build \
  && pnpm --filter web build
 
 # ---- runtime ----
@@ -28,11 +29,16 @@ RUN npm install -g pnpm@${PNPM_VERSION}
 WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages/core/package.json packages/core/
+COPY packages/stream/package.json packages/stream/
+COPY packages/protocol-xml/package.json packages/protocol-xml/
 COPY packages/server/package.json packages/server/
 RUN pnpm install --prod --frozen-lockfile --filter @radioformer/server... \
  && pnpm store prune
 COPY --from=build /app/packages/core/dist packages/core/dist
+COPY --from=build /app/packages/stream/dist packages/stream/dist
+COPY --from=build /app/packages/protocol-xml/dist packages/protocol-xml/dist
 COPY --from=build /app/packages/server/dist packages/server/dist
+COPY packages/server/assets packages/server/assets
 COPY --from=build /app/apps/web/build apps/web/build
 ENV NODE_ENV=production \
     PORT=8080 \
