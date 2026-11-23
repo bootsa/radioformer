@@ -21,9 +21,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @radioformer/core build
-      - run: pnpm -r check
-      - run: pnpm -r test
-      - run: pnpm --filter web build
+      - run: scripts/ci-run.sh check pnpm -r check
+      - run: scripts/ci-run.sh test pnpm -r test
+      - run: scripts/ci-run.sh web-build pnpm --filter web build
 
   stories:
     runs-on: ubuntu-24.04
@@ -35,7 +35,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter web story:build
+      - run: scripts/ci-run.sh story-build pnpm --filter web story:build
       - uses: actions/upload-artifact@v4
         with:
           name: component-stories
