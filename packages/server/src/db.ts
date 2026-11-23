@@ -41,6 +41,10 @@ const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   `,
+  `
+  ALTER TABLE radio ADD COLUMN host TEXT NOT NULL DEFAULT '';
+  ALTER TABLE radio ADD COLUMN pin TEXT NOT NULL DEFAULT '1234';
+  `,
 ];
 
 export function openDb(file: string): DatabaseSync {

@@ -27,3 +27,10 @@ export async function assertPublicUpstream(rawUrl: string, allowPrivate: boolean
   const addrs = net.isIP(url.hostname) ? [{ address: url.hostname }] : await lookup(url.hostname, { all: true });
   if (addrs.length === 0 || addrs.some((a) => isPrivateAddress(a.address))) throw new Error('upstream address is not public');
 }
+
+/** A radio's control address must be on the local network (private or link-local), never a public host. */
+export async function assertLanHost(host: string): Promise<void> {
+  if (!/^[A-Za-z0-9.-]{1,253}$/.test(host)) throw new Error('not a valid host name or address');
+  const addrs = net.isIP(host) ? [{ address: host }] : await lookup(host, { all: true });
+  if (addrs.length === 0 || addrs.some((a) => !isPrivateAddress(a.address))) throw new Error('the radio must be on the local network');
+}

@@ -14,6 +14,7 @@
   "dependencies": {
     "@fastify/static": "^9.0.0",
     "@radioformer/core": "workspace:*",
+    "@radioformer/fsapi": "workspace:*",
     "@radioformer/protocol-xml": "workspace:*",
     "@radioformer/stream": "workspace:*",
     "fastify": "^5.0.0",

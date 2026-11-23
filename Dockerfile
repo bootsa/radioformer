@@ -13,6 +13,7 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/web/package.json apps/web/
 COPY packages/core/package.json packages/core/
 COPY packages/stream/package.json packages/stream/
+COPY packages/fsapi/package.json packages/fsapi/
 COPY packages/protocol-xml/package.json packages/protocol-xml/
 COPY packages/server/package.json packages/server/
 RUN pnpm install --frozen-lockfile
@@ -30,12 +31,14 @@ WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages/core/package.json packages/core/
 COPY packages/stream/package.json packages/stream/
+COPY packages/fsapi/package.json packages/fsapi/
 COPY packages/protocol-xml/package.json packages/protocol-xml/
 COPY packages/server/package.json packages/server/
 RUN pnpm install --prod --frozen-lockfile --filter @radioformer/server... \
  && pnpm store prune
 COPY --from=build /app/packages/core/dist packages/core/dist
 COPY --from=build /app/packages/stream/dist packages/stream/dist
+COPY --from=build /app/packages/fsapi/dist packages/fsapi/dist
 COPY --from=build /app/packages/protocol-xml/dist packages/protocol-xml/dist
 COPY --from=build /app/packages/server/dist packages/server/dist
 COPY packages/server/assets packages/server/assets

@@ -251,6 +251,15 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/fsapi:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.19.2
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/protocol-xml:
     dependencies:
       '@radioformer/core':
@@ -272,6 +281,9 @@ importers:
       '@radioformer/core':
         specifier: workspace:*
         version: link:../core
+      '@radioformer/fsapi':
+        specifier: workspace:*
+        version: link:../fsapi
       '@radioformer/protocol-xml':
         specifier: workspace:*
         version: link:../protocol-xml

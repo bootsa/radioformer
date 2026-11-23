@@ -72,7 +72,7 @@ test('a radio can log in, browse and fetch a station, and is remembered', async 
   const detail = await app.inject({ url: `/?sSearchtype=3&Search=1000&mac=${MAC}&play`, headers: host });
   assert.match(detail.body, /<StationUrl>https:\/\/icecast\.radiofrance\.fr\/fip-hifi\.aac<\/StationUrl>/);
   assert.equal(detail.headers['cache-control'], 'no-store, no-cache, must-revalidate');
-  assert.equal((await app.inject('/api/v1/radios')).json()[0].mac, MAC);
+  assert.equal((await app.inject({ url: '/api/v1/radios', headers: auth })).json()[0].mac, MAC);
   await app.close();
 });
 

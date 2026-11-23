@@ -40,6 +40,13 @@ export interface RadioRow {
   firstSeen: string;
   lastSeen: string;
   lastIp: string;
+  /** Address of the radio's control interface (empty until set). */
+  host: string;
+}
+
+export interface RadioSettings {
+  host: string;
+  pin: string;
 }
 
 export interface LogoRow {
@@ -127,8 +134,19 @@ export class SqliteLibrary implements LibraryReader {
 
   listRadios(): RadioRow[] {
     const rows = this.#db.prepare('SELECT * FROM radio ORDER BY last_seen DESC').all() as unknown as {
-      id: number; mac: string; label: string; first_seen: string; last_seen: string; last_ip: string;
+      id: number; mac: string; label: string; first_seen: string; last_seen: string; last_ip: string; host: string;
     }[];
-    return rows.map((r) => ({ id: r.id, mac: r.mac, label: r.label, firstSeen: r.first_seen, lastSeen: r.last_seen, lastIp: r.last_ip }));
+    return rows.map((r) => ({ id: r.id, mac: r.mac, label: r.label, firstSeen: r.first_seen, lastSeen: r.last_seen, lastIp: r.last_ip, host: r.host }));
+  }
+
+  getRadio(id: number): (RadioRow & { pin: string }) | null {
+    const r = this.#db.prepare('SELECT * FROM radio WHERE id = ?').get(id) as unknown as
+      | { id: number; mac: string; label: string; first_seen: string; last_seen: string; last_ip: string; host: string; pin: string }
+      | undefined;
+    return r ? { id: r.id, mac: r.mac, label: r.label, firstSeen: r.first_seen, lastSeen: r.last_seen, lastIp: r.last_ip, host: r.host, pin: r.pin } : null;
+  }
+
+  updateRadio(id: number, label: string, settings: RadioSettings): boolean {
+    return this.#db.prepare('UPDATE radio SET label = ?, host = ?, pin = ? WHERE id = ?').run(label, settings.host, settings.pin, id).changes > 0;
   }
 }

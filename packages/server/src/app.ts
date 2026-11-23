@@ -4,13 +4,15 @@ import fastifyStatic from '@fastify/static';
 import { APP_NAME, Station } from '@radioformer/core';
 import { handleXml } from '@radioformer/protocol-xml';
 import { connectStream } from '@radioformer/stream';
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
-import { timingSafeEqual } from 'node:crypto';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import { clearSessionCookie, constantTimeEqual, isAdmin, setSessionCookie } from './auth.ts';
 import type { Config } from './config.ts';
 import { convertRadioApi } from './import-radioapi.ts';
 import { NewStation, type SqliteLibrary } from './library.ts';
 import { fetchImage, getDefaultLogo, sha256, toRadioPng } from './logos.ts';
 import { assertPublicUpstream } from './net-guard.ts';
+import { registerRadioRoutes } from './radio-routes.ts';
+import { RadioManager } from './radios.ts';
 
 export const VERSION = '0.1.0';
 
@@ -19,13 +21,6 @@ type AppConfig = Pick<Config, 'WEB_DIR' | 'LOG_LEVEL' | 'ADMIN_TOKEN' | 'PUBLIC_
 function baseUrl(req: FastifyRequest, config: AppConfig): string {
   if (config.PUBLIC_URL) return config.PUBLIC_URL.replace(/\/$/, '');
   return `http://${req.headers.host ?? 'localhost'}`;
-}
-
-function isAdmin(req: FastifyRequest, token: string | undefined): boolean {
-  if (!token) return false;
-  const given = Buffer.from((req.headers.authorization ?? '').replace(/^Bearer\s+/i, ''));
-  const want = Buffer.from(token);
-  return given.length === want.length && timingSafeEqual(given, want);
 }
 
 export async function buildApp(config: AppConfig, library: SqliteLibrary): Promise<FastifyInstance> {
@@ -107,12 +102,36 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary): Promi
     const s = /^\d+$/.test(req.params.id) ? library.getStation(Number(req.params.id)) : null;
     return s ?? reply.code(404).send({ error: 'not found' });
   });
-  app.get('/api/v1/radios', async () => library.listRadios());
 
   const requireAdmin = (req: FastifyRequest): string | null => {
     if (!config.ADMIN_TOKEN) return 'the API is read-only: set ADMIN_TOKEN to enable changes';
     return isAdmin(req, config.ADMIN_TOKEN) ? null : 'missing or wrong token';
   };
+
+  /** Sends 401/403 and returns false when the caller may not use admin routes. */
+  const guard = (req: FastifyRequest, reply: FastifyReply): boolean => {
+    const denied = requireAdmin(req);
+    if (denied) void reply.code(config.ADMIN_TOKEN ? 401 : 403).send({ error: denied });
+    return denied === null;
+  };
+
+  const manager = new RadioManager(library);
+  registerRadioRoutes(app, { library, manager, guard });
+  app.addHook('onClose', async () => manager.closeAll());
+
+  // ---- sign-in for the web app ----
+  app.get('/api/v1/session', async (req) => ({ admin: isAdmin(req, config.ADMIN_TOKEN), writable: Boolean(config.ADMIN_TOKEN) }));
+  app.post('/api/v1/login', async (req, reply) => {
+    if (!config.ADMIN_TOKEN) return reply.code(403).send({ error: 'sign-in is off: set ADMIN_TOKEN' });
+    const token = (req.body as { token?: unknown } | null)?.token;
+    if (typeof token !== 'string' || !constantTimeEqual(token, config.ADMIN_TOKEN)) return reply.code(401).send({ error: 'wrong token' });
+    setSessionCookie(reply, config.ADMIN_TOKEN);
+    return { admin: true };
+  });
+  app.post('/api/v1/logout', async (_req, reply) => {
+    clearSessionCookie(reply);
+    return { admin: false };
+  });
 
   app.post('/api/v1/stations', async (req, reply) => {
     const denied = requireAdmin(req);
