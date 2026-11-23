@@ -98,12 +98,17 @@ export class FsapiClient {
     return this.#serial(async () => void this.#check(parseResponse((await this.#call(`SET/${node}`, { value })).body), `SET ${node}`));
   }
 
-  /** Several nodes in one request; missing or unsupported nodes are simply absent from the result. */
-  getMany(nodes: string[]): Promise<Record<string, FsValue>> {
+  /**
+   * Several nodes per request; missing or unsupported nodes are simply absent from the result. A Roberts
+   * Stream 94i answers nothing at all when asked for more than 9 nodes at once, so requests are split.
+   */
+  getMany(nodes: string[], perRequest = 8): Promise<Record<string, FsValue>> {
     return this.#serial(async () => {
-      const map = parseMultiple((await this.#call('GET_MULTIPLE', { node: nodes })).body);
       const out: Record<string, FsValue> = {};
-      for (const [node, r] of map) if (r.status === 'FS_OK' && r.value !== undefined) out[node] = r.value;
+      for (let i = 0; i < nodes.length; i += perRequest) {
+        const map = parseMultiple((await this.#call('GET_MULTIPLE', { node: nodes.slice(i, i + perRequest) })).body);
+        for (const [node, r] of map) if (r.status === 'FS_OK' && r.value !== undefined) out[node] = r.value;
+      }
       return out;
     });
   }

@@ -21,7 +21,7 @@ afterEach(async () => {
   await stop();
 });
 
-test('status gathers everything the Remote page shows, in one request', async () => {
+test('status gathers everything the Remote page shows, in a few batched requests', async () => {
   const s = await control.status();
   assert.equal(s.name, 'DanceHall');
   assert.equal(s.power, true);
@@ -32,7 +32,7 @@ test('status gathers everything the Remote page shows, in one request', async ()
   assert.equal(s.play.text, 'Radio France - eclectic & fresh');
   assert.deepEqual([s.play.caps.stop, s.play.caps.next, s.play.caps.addPreset], [true, false, true]);
   assert.equal(s.eq.treble, -2);
-  assert.equal(radio.log.filter((l) => l === 'GET_MULTIPLE').length, 1);
+  assert.ok(radio.log.filter((l) => l === 'GET_MULTIPLE').length <= 4); // a few small batches, not one request per node
 });
 
 test('capability bits decode as the radio defines them', () => {

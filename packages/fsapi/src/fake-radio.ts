@@ -112,6 +112,8 @@ export class FakeRadio {
       return ok();
     }
     if (path === 'GET_MULTIPLE') {
+      // like the real 94i: more than 9 nodes and it answers with nothing useful
+      if (url.searchParams.getAll('node').length > 9) return send('<fsapiGetMultipleResponse>\n<fsapiResponse>\n<status>FS_PACKET_BAD</status>\n</fsapiResponse>\n</fsapiGetMultipleResponse>\n');
       const parts = ['<fsapiResponse>\n<status>FS_PACKET_BAD</status>\n</fsapiResponse>\n'];
       for (const node of url.searchParams.getAll('node')) {
         const t = this.nodes.get(node);
