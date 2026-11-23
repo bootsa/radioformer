@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Radioformer: one small Node process serving the radio protocol, the API and the static web app.
 
-ARG NODE_VERSION=24
+ARG NODE_VERSION=26
 ARG PNPM_VERSION=12.21.0
 
 # ---- build: runs on the build machine's own architecture (the output is plain JavaScript) ----
