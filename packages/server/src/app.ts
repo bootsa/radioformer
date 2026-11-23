@@ -9,6 +9,7 @@ import { clearSessionCookie, constantTimeEqual, isAdmin, setSessionCookie } from
 import type { Config } from './config.ts';
 import { convertRadioApi } from './import-radioapi.ts';
 import { NewStation, type SqliteLibrary } from './library.ts';
+import { MetadataHub } from './metadata/hub.ts';
 import { fetchImage, getDefaultLogo, sha256, toRadioPng } from './logos.ts';
 import { assertPublicUpstream } from './net-guard.ts';
 import { registerRadioRoutes } from './radio-routes.ts';
@@ -23,11 +24,12 @@ function baseUrl(req: FastifyRequest, config: AppConfig): string {
   return `http://${req.headers.host ?? 'localhost'}`;
 }
 
-export async function buildApp(config: AppConfig, library: SqliteLibrary): Promise<FastifyInstance> {
+export async function buildApp(config: AppConfig, library: SqliteLibrary, deps: { metadata?: MetadataHub } = {}): Promise<FastifyInstance> {
+  const metadata = deps.metadata ?? new MetadataHub();
   const app = Fastify({ logger: config.LOG_LEVEL === 'silent' ? false : { level: config.LOG_LEVEL } });
   let active = 0;
 
-  const proxyThis = (s: Station): boolean => s.proxyMode === 'proxy' || (s.proxyMode === 'auto' && s.transformer !== 'none');
+  const proxyThis = (s: Station): boolean => s.proxyMode === 'proxy' || (s.proxyMode === 'auto' && (s.transformer !== 'none' || s.metadataSource !== ''));
 
   // ---- radio protocol (older radios, XML) ----
   app.addHook('onRequest', async (req, reply) => {
@@ -73,8 +75,15 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary): Promi
     const ac = new AbortController();
     req.raw.on('close', () => ac.abort());
     active++;
+    const lease = station.metadataSource ? await metadata.acquire(station.metadataSource).catch(() => null) : null;
     try {
-      const up = await connectStream({ url: station.streamUrl, transformer: station.transformer, wantMeta, signal: ac.signal });
+      const up = await connectStream({
+        url: station.streamUrl,
+        transformer: station.transformer,
+        wantMeta,
+        signal: ac.signal,
+        ...(lease ? { titleSource: () => lease.current()?.title ?? '' } : {}),
+      });
       reply.hijack();
       const headers: Record<string, string> = {
         'Content-Type': up.contentType,
@@ -89,6 +98,7 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary): Promi
       req.log.warn({ station: station.id, err: String(err) }, 'stream failed');
       if (!reply.sent && !reply.raw.headersSent) return reply.code(502).send({ error: 'upstream unavailable' });
     } finally {
+      lease?.release();
       active--;
       if (!reply.raw.writableEnded) reply.raw.end();
     }
@@ -96,6 +106,14 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary): Promi
 
   // ---- API ----
   app.get('/healthz', { logLevel: 'silent' }, async () => ({ status: 'ok' }));
+  app.get<{ Params: { id: string } }>('/api/v1/stations/:id/now-playing', async (req, reply) => {
+    const s = /^\d+$/.test(req.params.id) ? library.getStation(Number(req.params.id)) : null;
+    if (!s) return reply.code(404).send({ error: 'not found' });
+    if (!s.metadataSource) return reply.code(404).send({ error: 'this station has no metadata source' });
+    const np = await metadata.peek(s.metadataSource);
+    return np ?? reply.code(503).send({ error: 'the feed is not answering' });
+  });
+  app.addHook('onClose', async () => metadata.close());
   app.get('/api/v1/version', async () => ({ name: APP_NAME, version: VERSION }));
   app.get('/api/v1/stations', async () => library.listStations());
   app.get<{ Params: { id: string } }>('/api/v1/stations/:id', async (req, reply) => {
@@ -138,6 +156,7 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary): Promi
     if (denied) return reply.code(config.ADMIN_TOKEN ? 401 : 403).send({ error: denied });
     const parsed = NewStation.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
+    if (parsed.data.metadataSource && !metadata.knows(parsed.data.metadataSource)) return reply.code(400).send({ error: 'unknown metadata source' });
     return reply.code(201).send(library.createStation(parsed.data));
   });
   app.put<{ Params: { id: string } }>('/api/v1/stations/:id', async (req, reply) => {
@@ -145,6 +164,7 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary): Promi
     if (denied) return reply.code(config.ADMIN_TOKEN ? 401 : 403).send({ error: denied });
     const parsed = NewStation.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
+    if (parsed.data.metadataSource && !metadata.knows(parsed.data.metadataSource)) return reply.code(400).send({ error: 'unknown metadata source' });
     const s = /^\d+$/.test(req.params.id) ? library.updateStation(Number(req.params.id), parsed.data) : null;
     return s ?? reply.code(404).send({ error: 'not found' });
   });

@@ -37,6 +37,7 @@ export function convertRadioApi(entries: unknown): ImportResult {
       transformer: 'none',
       proxyMode: e.proxy === true ? 'proxy' : 'auto',
       collection: typeof e.category === 'string' ? e.category.slice(0, 100) : '',
+      metadataSource: '',
     });
   }
   return result;

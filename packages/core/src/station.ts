@@ -17,5 +17,7 @@ export const Station = z.object({
   proxyMode: ProxyMode.default('auto'),
   /** Folder shown on the radio and in the web app; empty means none. */
   collection: z.string().max(100).default(''),
+  /** Where titles come from when the stream has none, e.g. `radiofrance:7`; empty means the stream's own. */
+  metadataSource: z.string().regex(/^[a-z]{2,20}:[A-Za-z0-9_-]{1,30}$|^$/).default(''),
 });
 export type Station = z.infer<typeof Station>;

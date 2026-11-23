@@ -45,6 +45,9 @@ const MIGRATIONS: string[] = [
   ALTER TABLE radio ADD COLUMN host TEXT NOT NULL DEFAULT '';
   ALTER TABLE radio ADD COLUMN pin TEXT NOT NULL DEFAULT '1234';
   `,
+  `
+  ALTER TABLE station ADD COLUMN metadata_source TEXT NOT NULL DEFAULT '';
+  `,
 ];
 
 export function openDb(file: string): DatabaseSync {

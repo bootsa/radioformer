@@ -1,6 +1,7 @@
 import type { Duplex, Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { IcyRewriter } from './icy.ts';
+import { IcyInjector } from './inject.ts';
 import { getTransformer } from './transformers.ts';
 import { openUpstream, type OpenOptions } from './upstream.ts';
 
@@ -13,7 +14,14 @@ export interface StreamRequest {
   signal?: AbortSignal;
   open?: OpenOptions;
   onTitle?: (title: string) => void;
+  /**
+   * Take the title from elsewhere (e.g. a broadcaster's "now playing" feed) instead of the stream's own
+   * metadata. Metadata the stream carries is dropped; blocks are generated for clients that ask for them.
+   */
+  titleSource?: () => string;
 }
+
+const INJECT_METAINT = 16_000;
 
 export interface StreamResult {
   contentType: string;
@@ -76,24 +84,30 @@ export async function connectStream(req: StreamRequest, depth = 0): Promise<Stre
   const metaint = Number(up.headers['icy-metaint'] ?? 0) || 0;
   const source: Readable = up.socket;
   if (up.rest.length > 0) source.unshift(up.rest);
-  const rewriter: Duplex | null =
-    metaint > 0
-      ? new IcyRewriter({
-          metaint,
-          emitMeta: req.wantMeta,
-          transform: getTransformer(req.transformer),
-          ...(req.onTitle ? { onTitle: req.onTitle } : {}),
-        })
-      : null;
+  const stages: Duplex[] = [];
+  if (req.titleSource) {
+    // strip whatever the stream carries, then announce the external title
+    if (metaint > 0) stages.push(new IcyRewriter({ metaint, emitMeta: false, transform: getTransformer('none') }));
+    if (req.wantMeta) stages.push(new IcyInjector({ metaint: INJECT_METAINT, getTitle: req.titleSource }));
+  } else if (metaint > 0) {
+    stages.push(
+      new IcyRewriter({
+        metaint,
+        emitMeta: req.wantMeta,
+        transform: getTransformer(req.transformer),
+        ...(req.onTitle ? { onTitle: req.onTitle } : {}),
+      }),
+    );
+  }
+  const announcedMetaint = req.titleSource ? (req.wantMeta ? INJECT_METAINT : null) : metaint > 0 && req.wantMeta ? metaint : null;
   return {
     contentType: up.headers['content-type'] ?? 'audio/mpeg',
-    metaint: rewriter && req.wantMeta ? metaint : null,
+    metaint: announcedMetaint,
     name: up.headers['icy-name'] ?? '',
     async pump(out) {
       source.resume();
       try {
-        if (rewriter) await pipeline(source, rewriter, out);
-        else await pipeline(source, out);
+        await pipeline(source, ...stages, out);
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
         if (code !== 'ERR_STREAM_PREMATURE_CLOSE' && code !== 'ECONNRESET' && code !== 'EPIPE') throw err;
