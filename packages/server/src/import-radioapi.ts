@@ -38,6 +38,7 @@ export function convertRadioApi(entries: unknown): ImportResult {
       proxyMode: e.proxy === true ? 'proxy' : 'auto',
       collection: typeof e.category === 'string' ? e.category.slice(0, 100) : '',
       metadataSource: '',
+      titleTemplate: '',
     });
   }
   return result;

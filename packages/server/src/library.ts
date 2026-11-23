@@ -14,6 +14,7 @@ interface Row {
   proxy_mode: string;
   collection: string;
   metadata_source: string;
+  title_template: string;
 }
 
 const toStation = (r: Row): Station =>
@@ -30,6 +31,7 @@ const toStation = (r: Row): Station =>
     proxyMode: r.proxy_mode,
     collection: r.collection,
     metadataSource: r.metadata_source,
+    titleTemplate: r.title_template,
   });
 
 export type NewStation = Omit<Station, 'id'>;
@@ -88,19 +90,19 @@ export class SqliteLibrary implements LibraryReader {
   createStation(s: NewStation): Station {
     const res = this.#db
       .prepare(
-        `INSERT INTO station (name, stream_url, logo_id, description, country, language, tags, transformer, proxy_mode, collection, metadata_source)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO station (name, stream_url, logo_id, description, country, language, tags, transformer, proxy_mode, collection, metadata_source, title_template)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(s.name, s.streamUrl, s.logoId, s.description, s.country, s.language, JSON.stringify(s.tags), s.transformer, s.proxyMode, s.collection, s.metadataSource);
+      .run(s.name, s.streamUrl, s.logoId, s.description, s.country, s.language, JSON.stringify(s.tags), s.transformer, s.proxyMode, s.collection, s.metadataSource, s.titleTemplate);
     return this.getStation(Number(res.lastInsertRowid))!;
   }
 
   updateStation(id: number, s: NewStation): Station | null {
     const res = this.#db
       .prepare(
-        `UPDATE station SET name=?, stream_url=?, logo_id=?, description=?, country=?, language=?, tags=?, transformer=?, proxy_mode=?, collection=?, metadata_source=? WHERE id=?`,
+        `UPDATE station SET name=?, stream_url=?, logo_id=?, description=?, country=?, language=?, tags=?, transformer=?, proxy_mode=?, collection=?, metadata_source=?, title_template=? WHERE id=?`,
       )
-      .run(s.name, s.streamUrl, s.logoId, s.description, s.country, s.language, JSON.stringify(s.tags), s.transformer, s.proxyMode, s.collection, s.metadataSource, id);
+      .run(s.name, s.streamUrl, s.logoId, s.description, s.country, s.language, JSON.stringify(s.tags), s.transformer, s.proxyMode, s.collection, s.metadataSource, s.titleTemplate, id);
     return res.changes > 0 ? this.getStation(id) : null;
   }
 

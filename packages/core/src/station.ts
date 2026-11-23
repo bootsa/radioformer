@@ -18,6 +18,11 @@ export const Station = z.object({
   /** Folder shown on the radio and in the web app; empty means none. */
   collection: z.string().max(100).default(''),
   /** Where titles come from when the stream has none, e.g. `radiofrance:7`; empty means the stream's own. */
+  /**
+   * How the title shown on the radio is put together when a metadata source is set, e.g.
+   * `{artist} - {title}[ · On air: {programme}][ · Next: {next}]`. Empty means "Artist - Title".
+   */
+  titleTemplate: z.string().max(300).default(''),
   metadataSource: z.string().regex(/^[a-z]{2,20}:[A-Za-z0-9_-]{1,30}$|^$/).default(''),
 });
 export type Station = z.infer<typeof Station>;

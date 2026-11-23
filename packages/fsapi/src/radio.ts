@@ -1,4 +1,5 @@
 import { FsapiClient, FsapiError, type FsapiOptions } from './client.ts';
+import { PLAY_STATES, type Mode, type NavItem, type PlayCaps, type RadioStatus, type Transport } from '@radioformer/core';
 import type { FsItem, FsValue } from './xml.ts';
 
 const N = {
@@ -37,70 +38,11 @@ const N = {
   selectPreset: 'netRemote.nav.action.selectPreset',
 } as const;
 
-export const PLAY_STATES = ['idle', 'buffering', 'playing', 'paused', 'rebuffering', 'error', 'stopped', 'error'] as const;
-export type PlayState = (typeof PLAY_STATES)[number];
-
-/** `netRemote.play.caps` is a bit mask of what the current source can do. */
-export interface PlayCaps {
-  pause: boolean;
-  stop: boolean;
-  next: boolean;
-  previous: boolean;
-  fastForward: boolean;
-  rewind: boolean;
-  shuffle: boolean;
-  repeat: boolean;
-  seek: boolean;
-  addPreset: boolean;
-}
-
 export function decodeCaps(mask: number): PlayCaps {
   const bit = (n: number) => (mask & (1 << n)) !== 0;
   return { pause: bit(0), stop: bit(1), next: bit(2), previous: bit(3), fastForward: bit(4), rewind: bit(5), shuffle: bit(6), repeat: bit(7), seek: bit(8), addPreset: bit(11) };
 }
 
-export interface Mode {
-  key: number;
-  id: string;
-  label: string;
-  selectable: boolean;
-}
-
-export interface RadioStatus {
-  name: string;
-  version: string;
-  /** Wi-Fi signal, 0 to 100. */
-  signal: number | null;
-  power: boolean;
-  volume: number;
-  volumeSteps: number;
-  muted: boolean;
-  mode: Mode | null;
-  play: {
-    state: PlayState;
-    caps: PlayCaps;
-    name: string;
-    text: string;
-    artist: string;
-    album: string;
-    graphicUri: string;
-    position: number | null;
-    duration: number | null;
-    shuffle: boolean;
-    repeat: number;
-  };
-  sleepSeconds: number;
-  eq: { preset: number; loudness: boolean; bass: number; treble: number };
-}
-
-export interface NavItem {
-  key: number;
-  name: string;
-  kind: 'folder' | 'item' | 'loading';
-  type: number;
-}
-
-export type Transport = 'stop' | 'play' | 'pause' | 'next' | 'previous';
 const TRANSPORT: Record<Transport, number> = { stop: 0, play: 1, pause: 2, next: 3, previous: 4 };
 
 const num = (v: FsValue | undefined, d = 0): number => (typeof v === 'number' ? v : d);

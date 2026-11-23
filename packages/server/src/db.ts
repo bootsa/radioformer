@@ -48,6 +48,9 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE station ADD COLUMN metadata_source TEXT NOT NULL DEFAULT '';
   `,
+  `
+  ALTER TABLE station ADD COLUMN title_template TEXT NOT NULL DEFAULT '';
+  `,
 ];
 
 export function openDb(file: string): DatabaseSync {

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import fastifyStatic from '@fastify/static';
-import { APP_NAME, Station } from '@radioformer/core';
+import { APP_NAME, renderTitle, Station } from '@radioformer/core';
 import { handleXml } from '@radioformer/protocol-xml';
 import { connectStream } from '@radioformer/stream';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
@@ -82,7 +82,7 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary, deps: 
         transformer: station.transformer,
         wantMeta,
         signal: ac.signal,
-        ...(lease ? { titleSource: () => lease.current()?.title ?? '' } : {}),
+        ...(lease ? { titleSource: () => { const np = lease.current(); return np ? renderTitle(np, station.titleTemplate) : ''; } } : {}),
       });
       reply.hijack();
       const headers: Record<string, string> = {

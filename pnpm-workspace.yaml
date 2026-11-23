@@ -18,3 +18,4 @@ minimumReleaseAgeExclude:
   - '@histoire/vendors@1.0.0-beta.2'
   - '@histoire/vue@1.0.0-beta.2'
   - histoire@1.0.0-beta.2
+  - '@lucide/svelte@1.78.0'
