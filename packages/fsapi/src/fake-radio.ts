@@ -10,6 +10,9 @@ export class FakeRadio {
   readonly log: string[] = [];
   sessions = new Set<string>();
   blockedListReads = 0;
+  /** How long GET_NOTIFIES waits when nothing has changed (the real radio waits about 25 s). */
+  holdMs = 150;
+  #waiters = new Set<() => void>();
   #next = 1000;
   #server: http.Server;
   #notifies: { node: string; value: Typed }[] = [];
@@ -71,6 +74,7 @@ export class FakeRadio {
 
   notify(node: string, value: Typed): void {
     this.#notifies.push({ node: node.toLowerCase(), value });
+    for (const w of this.#waiters) w();
   }
 
   #xml(t: Typed): string {
@@ -142,6 +146,25 @@ export class FakeRadio {
       return ok(body + (last ? '<listend/>\n' : ''));
     }
     if (path === 'GET_NOTIFIES') {
+      const reply = () => {
+        const out = this.#notifies.splice(0).map((n) => `<notify node="${n.node}"><value>${this.#xml(n.value)}</value>\n</notify>\n`).join('');
+        if (out === '') return send('<fsapiResponse><status>FS_TIMEOUT</status></fsapiResponse>');
+        ok(out);
+      };
+      if (this.#notifies.length > 0) return reply();
+      const timer = setTimeout(() => {
+        this.#waiters.delete(wake);
+        reply();
+      }, this.holdMs);
+      const wake = () => {
+        clearTimeout(timer);
+        this.#waiters.delete(wake);
+        reply();
+      };
+      this.#waiters.add(wake);
+      return;
+    }
+    if (path === 'GET_NOTIFIES_OLD') {
       const out = this.#notifies.splice(0).map((n) => `<notify node="${n.node}"><value>${this.#xml(n.value)}</value>\n</notify>\n`).join('');
       return ok(out);
     }

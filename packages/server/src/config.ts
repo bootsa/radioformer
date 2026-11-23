@@ -17,6 +17,12 @@ const Env = z.object({
   PUBLIC_URL: z.preprocess(blank, z.url().optional()),
   /** Let the stream proxy reach private addresses (LAN sources). */
   ALLOW_PRIVATE_UPSTREAMS: bool,
+  /** Port for the radio's control interface as seen by other apps (0 = off). */
+  FSAPI_FACE_PORT: z.coerce.number().int().min(0).max(65535).default(0),
+  /** PIN the apps use on that face; the radio's own default is 1234. */
+  FSAPI_FACE_PIN: z.string().regex(/^\d{4}$/).default('1234'),
+  /** Which radio it fronts. */
+  FSAPI_FACE_RADIO: z.coerce.number().int().min(1).default(1),
   MAX_STREAMS: z.coerce.number().int().min(1).max(100).default(8),
 });
 export type Config = z.infer<typeof Env>;

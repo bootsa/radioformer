@@ -46,12 +46,17 @@ export class FsapiClient {
     return run;
   }
 
-  async #http(path: string, params: Record<string, string | number | string[]> = {}, withSession = true): Promise<{ status: number; body: string }> {
+  async #http(
+    path: string,
+    params: Record<string, string | number | string[]> = {},
+    withSession = true,
+    timeoutMs = this.#opts.timeoutMs,
+  ): Promise<{ status: number; body: string }> {
     const url = new URL(`http://${this.#opts.host}:${this.#opts.port}/fsapi/${path}`);
     url.searchParams.set('pin', this.#opts.pin);
     if (withSession && this.#sid) url.searchParams.set('sid', this.#sid);
     for (const [k, v] of Object.entries(params)) for (const x of Array.isArray(v) ? v : [v]) url.searchParams.append(k, String(x));
-    const res = await this.#opts.fetch(url, { signal: AbortSignal.timeout(this.#opts.timeoutMs) });
+    const res = await this.#opts.fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
     return { status: res.status, body: await res.text() };
   }
 
@@ -139,9 +144,34 @@ export class FsapiClient {
     });
   }
 
+  /** A request passed through unchanged (for the front door); returns the radio's HTTP status and body. */
+  raw(path: string, params: Record<string, string | number | string[]> = {}): Promise<{ status: number; body: string }> {
+    return this.#serial(() => this.#call(path, params));
+  }
+
+  /**
+   * Waits for change notifications (the radio holds the request for about 25 seconds). It does not use the
+   * request queue, because the radio keeps answering other requests meanwhile. Resolves with an empty list
+   * on timeout; the caller should keep the session alive with ordinary requests.
+   */
+  async waitNotifications(): Promise<{ node: string; value: FsValue | undefined }[]> {
+    await this.#serial(() => this.#ensureSession());
+    const res = await this.#http('GET_NOTIFIES', {}, true, 45_000);
+    if (res.status === 404 || res.status === 403) {
+      this.#sid = null; // the radio dropped the session; the next request opens a new one
+      return [];
+    }
+    const parsed = parseResponse(res.body);
+    if (parsed.status === 'FS_TIMEOUT') return [];
+    return this.#check(parsed, 'GET_NOTIFIES').notifies ?? [];
+  }
+
   /** Pending change notifications from the radio (node names come back in lower case). */
   notifications(): Promise<{ node: string; value: FsValue | undefined }[]> {
-    return this.#serial(async () => this.#check(parseResponse((await this.#call('GET_NOTIFIES')).body), 'GET_NOTIFIES').notifies ?? []);
+    return this.#serial(async () => {
+      const r = parseResponse((await this.#call('GET_NOTIFIES')).body);
+      return r.status === 'FS_TIMEOUT' ? [] : (this.#check(r, 'GET_NOTIFIES').notifies ?? []);
+    });
   }
 
   /** Ends the session so the radio is free for other apps. Safe to call at any time. */

@@ -12,12 +12,14 @@ import { NewStation, type SqliteLibrary } from './library.ts';
 import { MetadataHub } from './metadata/hub.ts';
 import { fetchImage, getDefaultLogo, sha256, toRadioPng } from './logos.ts';
 import { assertPublicUpstream } from './net-guard.ts';
+import { startFacade } from './facade-server.ts';
 import { registerRadioRoutes } from './radio-routes.ts';
 import { RadioManager } from './radios.ts';
 
 export const VERSION = '0.1.0';
 
-type AppConfig = Pick<Config, 'WEB_DIR' | 'LOG_LEVEL' | 'ADMIN_TOKEN' | 'PUBLIC_URL' | 'ALLOW_PRIVATE_UPSTREAMS' | 'MAX_STREAMS'>;
+type AppConfig = Pick<Config, 'WEB_DIR' | 'LOG_LEVEL' | 'ADMIN_TOKEN' | 'PUBLIC_URL' | 'ALLOW_PRIVATE_UPSTREAMS' | 'MAX_STREAMS'> &
+  Partial<Pick<Config, 'FSAPI_FACE_PORT' | 'FSAPI_FACE_PIN' | 'FSAPI_FACE_RADIO'>>;
 
 function baseUrl(req: FastifyRequest, config: AppConfig): string {
   if (config.PUBLIC_URL) return config.PUBLIC_URL.replace(/\/$/, '');
@@ -136,6 +138,17 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary, deps: 
   const manager = new RadioManager(library);
   registerRadioRoutes(app, { library, manager, guard });
   app.addHook('onClose', async () => manager.closeAll());
+  if (config.FSAPI_FACE_PORT) {
+    const face = startFacade({
+      port: config.FSAPI_FACE_PORT,
+      host: '0.0.0.0',
+      pin: config.FSAPI_FACE_PIN ?? '1234',
+      radioId: config.FSAPI_FACE_RADIO ?? 1,
+      manager,
+      log: (m) => app.log.info(m),
+    });
+    app.addHook('onClose', async () => face.close());
+  }
 
   // ---- sign-in for the web app ----
   app.get('/api/v1/session', async (req) => ({ admin: isAdmin(req, config.ADMIN_TOKEN), writable: Boolean(config.ADMIN_TOKEN) }));
