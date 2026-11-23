@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/index.js",
-    "test": "node --conditions=radioformer-source --test src/"
+    "test": "node --conditions=radioformer-source --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@fastify/static": "^9.0.0",
