@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/build
+**/.svelte-kit
+**/.histoire
+.git
+legacy
+docs
+data

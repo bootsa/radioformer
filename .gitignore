@@ -1,7 +1,13 @@
-/php/data/*.log
-/php/data/cache
+node_modules/
+dist/
+build/
+.svelte-kit/
+.histoire/
+*.log
+.env
+data/
+coverage/
 
-/data/
-/media/
-/redis/
 .DS_Store
+/legacy/php/data/*.log
+/legacy/php/data/cache

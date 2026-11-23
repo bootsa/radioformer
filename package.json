@@ -1,0 +1,17 @@
+{
+  "name": "radioformer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "license": "GPL-3.0-only",
+  "packageManager": "pnpm@12.21.0",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "build": "pnpm -r build",
+    "check": "pnpm -r check",
+    "test": "pnpm -r test",
+    "dev:server": "pnpm --filter @radioformer/server dev",
+    "dev:web": "pnpm --filter web dev",
+    "stories": "pnpm --filter web story:dev"
+  }
+}

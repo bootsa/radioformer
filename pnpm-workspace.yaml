@@ -1,0 +1,19 @@
+packages:
+  - apps/*
+  - packages/*
+allowBuilds:
+  esbuild: true
+  msw: false
+minimumReleaseAgeExclude:
+  - '@histoire/app@1.0.0-beta.2'
+  - '@histoire/cli@1.0.0-beta.2'
+  - '@histoire/controls@1.0.0-beta.2'
+  - '@histoire/dev-proxy@1.0.0-beta.2'
+  - '@histoire/plugin-kit@1.0.0-beta.2'
+  - '@histoire/plugin-svelte@1.0.0-beta.2'
+  - '@histoire/protocol@1.0.0-beta.2'
+  - '@histoire/sdk@1.0.0-beta.2'
+  - '@histoire/shared@1.0.0-beta.2'
+  - '@histoire/vendors@1.0.0-beta.2'
+  - '@histoire/vue@1.0.0-beta.2'
+  - histoire@1.0.0-beta.2

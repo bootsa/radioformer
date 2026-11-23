@@ -1,0 +1,24 @@
+{
+  "name": "@radioformer/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-only",
+  "scripts": {
+    "dev": "node --conditions=radioformer-source --watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js",
+    "test": "node --conditions=radioformer-source --test src/"
+  },
+  "dependencies": {
+    "@fastify/static": "^9.0.0",
+    "@radioformer/core": "workspace:*",
+    "fastify": "^5.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "@types/node": "^24.0.0"
+  }
+}
