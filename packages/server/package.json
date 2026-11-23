@@ -17,6 +17,7 @@
     "@radioformer/protocol-xml": "workspace:*",
     "@radioformer/stream": "workspace:*",
     "fastify": "^5.0.0",
+    "sharp": "^0.34.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {

@@ -30,6 +30,17 @@ const MIGRATIONS: string[] = [
     last_ip TEXT NOT NULL DEFAULT ''
   );
   `,
+  `
+  CREATE TABLE logo (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sha256 TEXT NOT NULL UNIQUE,
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    origin TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  `,
 ];
 
 export function openDb(file: string): DatabaseSync {

@@ -4,6 +4,7 @@ packages:
 allowBuilds:
   esbuild: true
   msw: false
+  sharp: true
 minimumReleaseAgeExclude:
   - '@histoire/app@1.0.0-beta.2'
   - '@histoire/cli@1.0.0-beta.2'

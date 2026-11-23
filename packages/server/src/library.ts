@@ -42,6 +42,11 @@ export interface RadioRow {
   lastIp: string;
 }
 
+export interface LogoRow {
+  id: number;
+  data: Buffer;
+}
+
 /** The station library and the list of radios, stored in SQLite. */
 export class SqliteLibrary implements LibraryReader {
   readonly #db: DatabaseSync;
@@ -92,6 +97,22 @@ export class SqliteLibrary implements LibraryReader {
 
   deleteStation(id: number): boolean {
     return this.#db.prepare('DELETE FROM station WHERE id = ?').run(id).changes > 0;
+  }
+
+  /** Stores a logo (deduplicated by hash) and returns its id. */
+  saveLogo(sha256: string, width: number, height: number, data: Buffer, origin: string): number {
+    const existing = this.#db.prepare('SELECT id FROM logo WHERE sha256 = ?').get(sha256) as { id: number } | undefined;
+    if (existing) return existing.id;
+    return Number(this.#db.prepare('INSERT INTO logo (sha256, width, height, data, origin) VALUES (?, ?, ?, ?, ?)').run(sha256, width, height, data, origin).lastInsertRowid);
+  }
+
+  getLogo(id: number): Buffer | null {
+    const row = this.#db.prepare('SELECT data FROM logo WHERE id = ?').get(id) as { data: Uint8Array } | undefined;
+    return row ? Buffer.from(row.data) : null;
+  }
+
+  setStationLogo(stationId: number, logoId: number | null): boolean {
+    return this.#db.prepare('UPDATE station SET logo_id = ? WHERE id = ?').run(logoId, stationId).changes > 0;
   }
 
   /** Records a sighting of a radio; creates the row on first contact. */

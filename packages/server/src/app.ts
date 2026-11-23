@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import { APP_NAME, Station } from '@radioformer/core';
@@ -9,11 +9,10 @@ import { timingSafeEqual } from 'node:crypto';
 import type { Config } from './config.ts';
 import { convertRadioApi } from './import-radioapi.ts';
 import { NewStation, type SqliteLibrary } from './library.ts';
+import { fetchImage, getDefaultLogo, sha256, toRadioPng } from './logos.ts';
 import { assertPublicUpstream } from './net-guard.ts';
 
 export const VERSION = '0.1.0';
-
-const DEFAULT_LOGO = readFileSync(new URL('../assets/default.png', import.meta.url));
 
 type AppConfig = Pick<Config, 'WEB_DIR' | 'LOG_LEVEL' | 'ADMIN_TOKEN' | 'PUBLIC_URL' | 'ALLOW_PRIVATE_UPSTREAMS' | 'MAX_STREAMS'>;
 
@@ -43,7 +42,7 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary): Promi
       library,
       url: (p) => `${base}${p}`,
       streamUrl: (s) => (proxyThis(s) ? `${base}/s/${s.id}` : s.streamUrl),
-      logoUrl: () => `${base}/media/default.png`,
+      logoUrl: (s) => (s.logoId ? `${base}/logo/${s.logoId}.png` : `${base}/media/default.png`),
       radioSeen: (mac) => {
         if (/^[0-9a-f]{28,40}$/.test(mac)) library.touchRadio(mac, req.ip);
       },
@@ -57,7 +56,12 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary): Promi
       .send(res.body);
   });
 
-  app.get('/media/default.png', async (_req, reply) => reply.type('image/png').header('Cache-Control', 'public, max-age=86400').send(DEFAULT_LOGO));
+  app.get('/media/default.png', async (_req, reply) => reply.type('image/png').header('Cache-Control', 'public, max-age=86400').send(await getDefaultLogo()));
+  app.get<{ Params: { id: string } }>('/logo/:id.png', async (req, reply) => {
+    const data = /^\d+$/.test(req.params.id) ? library.getLogo(Number(req.params.id)) : null;
+    if (!data) return reply.code(404).send({ error: 'unknown logo' });
+    return reply.type('image/png').header('Cache-Control', 'public, max-age=604800, immutable').send(data);
+  });
 
   // ---- stream proxy ----
   app.get<{ Params: { id: string } }>('/s/:id', async (req, reply) => {
@@ -129,6 +133,22 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary): Promi
     const denied = requireAdmin(req);
     if (denied) return reply.code(config.ADMIN_TOKEN ? 401 : 403).send({ error: denied });
     return /^\d+$/.test(req.params.id) && library.deleteStation(Number(req.params.id)) ? reply.code(204).send() : reply.code(404).send({ error: 'not found' });
+  });
+  app.post<{ Params: { id: string } }>('/api/v1/stations/:id/logo', async (req, reply) => {
+    const denied = requireAdmin(req);
+    if (denied) return reply.code(config.ADMIN_TOKEN ? 401 : 403).send({ error: denied });
+    const id = /^\d+$/.test(req.params.id) ? Number(req.params.id) : NaN;
+    if (!library.getStation(id)) return reply.code(404).send({ error: 'not found' });
+    const url = (req.body as { url?: unknown } | null)?.url;
+    if (typeof url !== 'string') return reply.code(400).send({ error: 'body must be {"url": "<image address>"}' });
+    try {
+      const png = await toRadioPng(await fetchImage(url, config.ALLOW_PRIVATE_UPSTREAMS));
+      const logoId = library.saveLogo(sha256(png.data), png.width, png.height, png.data, url);
+      library.setStationLogo(id, logoId);
+      return { logoId, url: `/logo/${logoId}.png` };
+    } catch (err) {
+      return reply.code(422).send({ error: `could not use that image: ${(err as Error).message}` });
+    }
   });
   app.post('/api/v1/import/radioapi', async (req, reply) => {
     const denied = requireAdmin(req);

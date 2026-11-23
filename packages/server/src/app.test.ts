@@ -151,3 +151,35 @@ test('Radio-API station lists can be imported', async () => {
   assert.equal(list.find((s) => s.name === 'Needs proxy')?.proxyMode, 'proxy');
   await app.close();
 });
+
+import http from 'node:http';
+
+test('a station logo is fetched, resized, stored and served, and the radio is told where it is', async () => {
+  const img = http.createServer((_q, res) => res.writeHead(200, { 'Content-Type': 'image/svg+xml' }).end('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><circle cx="150" cy="150" r="100" fill="#c33"/></svg>'));
+  await new Promise<void>((r) => img.listen(0, '127.0.0.1', r));
+  const { app, library } = await setup({ ALLOW_PRIVATE_UPSTREAMS: true } as never);
+  library.createStation({ name: 'FIP', streamUrl: 'http://x/y', logoId: null, description: '', country: '', language: '', tags: [], transformer: 'none', proxyMode: 'direct', collection: '' });
+  try {
+    const res = await app.inject({ method: 'POST', url: '/api/v1/stations/1000/logo', headers: auth, payload: { url: `http://127.0.0.1:${(img.address() as net.AddressInfo).port}/logo.svg` } });
+    assert.equal(res.statusCode, 200);
+    const { logoId } = res.json() as { logoId: number };
+    const png = await app.inject(`/logo/${logoId}.png`);
+    assert.equal(png.headers['content-type'], 'image/png');
+    assert.equal(png.rawPayload.subarray(1, 4).toString(), 'PNG');
+    const detail = await app.inject({ url: `/?sSearchtype=3&Search=1000&mac=${MAC}`, headers: { host: 'radio.test' } });
+    assert.match(detail.body, new RegExp(`<Logo>http://radio\\.test/logo/${logoId}\\.png</Logo>`));
+    const other = await app.inject({ method: 'POST', url: '/api/v1/stations/1000/logo', headers: auth, payload: { url: 'ftp://nope' } });
+    assert.equal(other.statusCode, 422);
+  } finally {
+    img.close();
+    await app.close();
+  }
+});
+
+test('stations without a logo show the neutral default icon', async () => {
+  const { app } = await setup();
+  const res = await app.inject('/media/default.png');
+  assert.equal(res.headers['content-type'], 'image/png');
+  assert.equal(res.rawPayload.subarray(1, 4).toString(), 'PNG');
+  await app.close();
+});
