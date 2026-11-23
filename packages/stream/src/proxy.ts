@@ -25,9 +25,54 @@ export interface StreamResult {
   close(): void;
 }
 
+const PLAYLIST_TYPES = /mpegurl|scpls|x-pls|audio\/m3u/i;
+
+function isPlaylist(url: string, contentType: string | undefined): boolean {
+  if (contentType && PLAYLIST_TYPES.test(contentType)) return true;
+  return /\.(m3u|pls)(\?|$)/i.test(new URL(url).pathname + new URL(url).search);
+}
+
+async function readSmallBody(socket: Readable, first: Buffer, max = 65_536): Promise<string> {
+  const parts: Buffer[] = [first];
+  let size = first.length;
+  socket.resume();
+  for await (const chunk of socket as AsyncIterable<Buffer>) {
+    parts.push(chunk);
+    size += chunk.length;
+    if (size > max) break;
+  }
+  return Buffer.concat(parts).toString('utf8');
+}
+
+/** First stream address in an M3U or PLS playlist (relative entries are resolved against `base`). */
+export function parsePlaylist(text: string, base: string): string | null {
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    const m = /^(?:File\d+=)?(.+)$/i.exec(line);
+    if (!m || line.startsWith('#') || line.startsWith('[') || /^(NumberOfEntries|Version|Title\d+|Length\d+)=/i.test(line)) continue;
+    try {
+      const u = new URL(m[1]!.trim(), base);
+      if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString();
+    } catch {
+      /* not a URL, try the next line */
+    }
+  }
+  return null;
+}
+
 /** Connects upstream and returns headers for the client plus a `pump` that forwards the audio. */
-export async function connectStream(req: StreamRequest): Promise<StreamResult> {
+export async function connectStream(req: StreamRequest, depth = 0): Promise<StreamResult> {
   const up = await openUpstream(req.url, { ...req.open, ...(req.signal ? { signal: req.signal } : {}) });
+  if (isPlaylist(req.url, up.headers['content-type'])) {
+    if (depth >= 2) {
+      up.socket.destroy();
+      throw new Error('playlist inside playlist');
+    }
+    const target = parsePlaylist(await readSmallBody(up.socket, up.rest), req.url);
+    up.socket.destroy();
+    if (!target) throw new Error('playlist without a stream address');
+    return connectStream({ ...req, url: target }, depth + 1);
+  }
   const metaint = Number(up.headers['icy-metaint'] ?? 0) || 0;
   const source: Readable = up.socket;
   if (up.rest.length > 0) source.unshift(up.rest);

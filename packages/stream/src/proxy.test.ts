@@ -66,3 +66,30 @@ test('a non-200 upstream is an error', async () => {
     fake.close();
   }
 });
+
+import { parsePlaylist } from './proxy.ts';
+
+test('playlists: M3U and PLS give the first stream address', () => {
+  assert.equal(parsePlaylist('#EXTM3U\n#EXTINF:-1,NDR\nhttp://a.example/live.mp3\nhttp://b.example/x\n', 'http://p/'), 'http://a.example/live.mp3');
+  assert.equal(parsePlaylist('[playlist]\nNumberOfEntries=1\nFile1=http://a.example/s.aac\nTitle1=X\nVersion=2\n', 'http://p/'), 'http://a.example/s.aac');
+  assert.equal(parsePlaylist('#EXTM3U\n/live/a.mp3\n', 'http://host.example/pl/list.m3u'), 'http://host.example/live/a.mp3');
+  assert.equal(parsePlaylist('#EXTM3U\nftp://x/y\n', 'http://p/'), null);
+});
+
+test('connectStream follows a playlist to the real stream', async () => {
+  const fake = await fakeIcecast();
+  const pl = net.createServer((sock) => {
+    sock.on('error', () => {});
+    sock.once('data', () => sock.end(`HTTP/1.0 200 OK\r\nContent-Type: audio/x-mpegurl\r\n\r\n#EXTM3U\nhttp://127.0.0.1:${fake.port}/live\n`));
+  });
+  await new Promise<void>((r) => pl.listen(0, '127.0.0.1', r));
+  try {
+    const res = await connectStream({ url: `http://127.0.0.1:${(pl.address() as net.AddressInfo).port}/list.m3u`, transformer: 'dalet-xml', wantMeta: true });
+    const chunks: Buffer[] = [];
+    await res.pump(new Writable({ write: (c: Buffer, _e, cb) => (chunks.push(c), cb()) }));
+    assert.match(Buffer.concat(chunks).toString('latin1'), /StreamTitle='Ana - Song';/);
+  } finally {
+    pl.close();
+    fake.close();
+  }
+});

@@ -96,7 +96,7 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary): Promi
   });
 
   // ---- API ----
-  app.get('/healthz', async () => ({ status: 'ok' }));
+  app.get('/healthz', { logLevel: 'silent' }, async () => ({ status: 'ok' }));
   app.get('/api/v1/version', async () => ({ name: APP_NAME, version: VERSION }));
   app.get('/api/v1/stations', async () => library.listStations());
   app.get<{ Params: { id: string } }>('/api/v1/stations/:id', async (req, reply) => {
