@@ -6,6 +6,8 @@ export default defineConfig({
 	setupFile: 'src/histoire.setup.ts',
 	storyMatch: ['src/**/*.story.svelte'],
 	outDir: '.histoire/dist',
+	// Served from a sub-path on GitHub Pages; CI sets HISTOIRE_BASE.
+	vite: { base: process.env.HISTOIRE_BASE ?? '/' },
 	theme: {
 		title: 'Radioformer components'
 	},

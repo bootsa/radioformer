@@ -36,11 +36,26 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: scripts/ci-run.sh story-build pnpm --filter web story:build
-      - uses: actions/upload-artifact@v4
+        env:
+          # The site lives at https://<user>.github.io/<repo>/
+          HISTOIRE_BASE: /${{ github.event.repository.name }}/
+      - uses: actions/upload-pages-artifact@v3
         with:
-          name: component-stories
           path: apps/web/.histoire/dist
-          retention-days: 14
+
+  pages:
+    needs: stories
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
 
   image:
     needs: test
