@@ -266,10 +266,12 @@ All run against the radio at its LAN address with a person listening. Commands: 
 | Same, with a DIDL-Lite metadata document | Refused: `NO_MEDIA_PRESENT`; the radio did not even fetch the URL |
 | FIP through our ICY proxy (plain HTTP/1.0 response, no metadata) | Radio connected within a second; sound within 2 to 3 seconds |
 | A finite 40-second WAV served from the LAN | Started at once; position counter advanced in step with real time |
+| Cold start: radio in standby, direct Radio France AAC, empty metadata (second attempt) | The radio woke itself, took about 11 s to answer the command (mode switch), played within about 12 s of the command; the 2-minute delay of the first attempt did not repeat and is unexplained |
 | A live, real-time-paced WAV declared 2 GB long (fake file) | Played from the start for two minutes; position counter equal to elapsed time (no extra backlog); audible |
 
-Conclusions: leave `CurrentURIMetaData` empty; serve audio from Radioformer, not directly from third-party
-servers; live audio can be served "as a file" (long declared length, paced in real time). What is **not**
+Conclusions: leave `CurrentURIMetaData` empty; the radio wakes from standby on `SetAVTransportURI` + `Play`;
+starting a stream takes about 10 s; serving audio from Radioformer is not required for fast starts, but it
+is what lets us clean titles; live audio can be served "as a file" (long declared length, paced in real time). What is **not**
 measured: the actual end-to-end audio delay (a beep against a clock), what the display shows besides the
 URL, and how the radio behaves when the connection drops. Test scripts live outside the repository for now;
 M4 turns them into proper tests with a fake radio.
