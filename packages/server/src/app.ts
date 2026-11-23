@@ -19,7 +19,7 @@ import { RadioManager } from './radios.ts';
 export const VERSION = '0.1.0';
 
 type AppConfig = Pick<Config, 'WEB_DIR' | 'LOG_LEVEL' | 'ADMIN_TOKEN' | 'PUBLIC_URL' | 'ALLOW_PRIVATE_UPSTREAMS' | 'MAX_STREAMS'> &
-  Partial<Pick<Config, 'FSAPI_FACE_PORT' | 'FSAPI_FACE_PIN' | 'FSAPI_FACE_RADIO' | 'FSAPI_FACE_NAME'>>;
+  Partial<Pick<Config, 'FSAPI_FACE_PORT' | 'FSAPI_FACE_PIN' | 'FSAPI_FACE_RADIO' | 'FSAPI_FACE_NAME' | 'FSAPI_FACE_ASSET_URL'>>;
 
 function baseUrl(req: FastifyRequest, config: AppConfig): string {
   if (config.PUBLIC_URL) return config.PUBLIC_URL.replace(/\/$/, '');
@@ -145,6 +145,7 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary, deps: 
       pin: config.FSAPI_FACE_PIN ?? '1234',
       radioId: config.FSAPI_FACE_RADIO ?? 1,
       name: config.FSAPI_FACE_NAME ?? '',
+      assetUrl: config.FSAPI_FACE_ASSET_URL,
       manager,
       log: (m) => app.log.info(m),
     });

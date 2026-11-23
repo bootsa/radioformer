@@ -23,6 +23,8 @@ const Env = z.object({
   FSAPI_FACE_PIN: z.string().regex(/^\d{4}$/).default('1234'),
   /** The name apps see (empty: the radio's name plus a "+"). */
   FSAPI_FACE_NAME: z.string().max(60).default(''),
+  /** Where apps outside the radio's DNS can load pictures (e.g. http://192.168.222.241:8081). Empty: no rewriting. */
+  FSAPI_FACE_ASSET_URL: z.preprocess(blank, z.url().optional()),
   /** Which radio it fronts. */
   FSAPI_FACE_RADIO: z.coerce.number().int().min(1).default(1),
   MAX_STREAMS: z.coerce.number().int().min(1).max(100).default(8),

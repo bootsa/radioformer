@@ -9,6 +9,8 @@ export interface FacadeServerOptions {
   radioId: number;
   /** Name apps see; empty means the radio's name plus "+". */
   name: string;
+  /** Base address for pictures, or undefined to leave the radio's own addresses alone. */
+  assetUrl?: string | undefined;
   manager: RadioManager;
   log: (msg: string) => void;
 }
@@ -17,8 +19,23 @@ export interface FacadeServerOptions {
  * Serves the radio's control interface (FSAPI) on its own port: apps such as Home Assistant or UNDOK are
  * pointed here instead of at the radio, and Radioformer keeps the only real session.
  */
+/** Pictures the radio announces live under its service names (radio.wifiradiofrontier.com), which only resolve through the radio's own DNS. */
+export function pictureRewriter(assetUrl: string | undefined): (uri: string) => string {
+  if (!assetUrl) return (u) => u;
+  const base = assetUrl.replace(/\/$/, '');
+  return (uri) => {
+    try {
+      const u = new URL(uri);
+      return /(?:wifiradiofrontier|internetradiofrontier)\.com$/.test(u.hostname) ? `${base}${u.pathname}${u.search}` : uri;
+    } catch {
+      return uri;
+    }
+  };
+}
+
 export function startFacade(opts: FacadeServerOptions): { close(): Promise<void> } {
-  const facade = new FsapiFacade({ upstream: () => opts.manager.get(opts.radioId)?.client ?? null, pin: opts.pin, friendlyName: opts.name });
+  const rewriteUri = pictureRewriter(opts.assetUrl);
+  const facade = new FsapiFacade({ upstream: () => opts.manager.get(opts.radioId)?.client ?? null, pin: opts.pin, friendlyName: opts.name, rewriteUri });
 
   const refreshIdentity = async () => {
     try {

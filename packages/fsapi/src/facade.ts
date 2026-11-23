@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto';
-import type { FsapiClient } from './client.ts';
+import { FsapiError, type FsapiClient } from './client.ts';
+import { NAV, navFor } from './nav.ts';
 import { parseMultiple } from './xml.ts';
 
 export interface FacadeOptions {
@@ -16,6 +17,8 @@ export interface FacadeOptions {
   cacheMs?: number;
   /** How often the real session is poked while someone is connected (it expires when idle). */
   keepAliveMs?: number;
+  /** Changes picture addresses before apps see them (the radio's own addresses only resolve through its DNS). */
+  rewriteUri?: (uri: string) => string;
 }
 
 export interface FacadeRequest {
@@ -39,6 +42,9 @@ interface Session {
 
 const XML = 'text/xml';
 const NAME_NODE = 'netremote.sys.info.friendlyname';
+const PICTURE_NODE = 'netremote.play.info.graphicuri';
+const MODE_NODE = 'netremote.sys.mode';
+const lower = (n: string) => n.toLowerCase();
 const ok = (inner = ''): FacadeResponse => ({ status: 200, contentType: XML, body: `<fsapiResponse>\n<status>FS_OK</status>\n${inner}</fsapiResponse>\n` });
 const status = (code: string): FacadeResponse => ({ status: 200, contentType: XML, body: `<fsapiResponse><status>${code}</status></fsapiResponse>\n` });
 const text = (code: number, body = ''): FacadeResponse => ({ status: code, contentType: XML, body });
@@ -64,7 +70,7 @@ export class FsapiFacade {
   #version = '';
 
   constructor(opts: FacadeOptions) {
-    this.#o = { friendlyName: '', version: 'radioformer', sessionTtlMs: 10 * 60_000, cacheMs: 1000, keepAliveMs: 10_000, ...opts };
+    this.#o = { friendlyName: '', version: 'radioformer', sessionTtlMs: 10 * 60_000, cacheMs: 1000, keepAliveMs: 10_000, rewriteUri: (u: string) => u, ...opts };
   }
 
   get sessionCount(): number {
@@ -81,14 +87,17 @@ export class FsapiFacade {
     const session = this.#sessions.get(sid);
     if (!session) return text(404, '404 Error');
     session.lastSeen = Date.now();
+    const up = this.#o.upstream();
     if (rest === 'DELETE_SESSION') {
       this.#sessions.delete(sid);
+      if (up) void navFor(up).forget(sid);
       this.#maybeStop();
       return ok();
     }
-    const up = this.#o.upstream();
     if (!up) return status('FS_FAIL');
     try {
+      const navResponse = await this.#nav(sid, up, rest, req.query);
+      if (navResponse) return navResponse;
       if (rest === 'GET_NOTIFIES') return await this.#notifies(session);
       if (rest === 'GET_MULTIPLE') return await this.#multiple(up, req.query.getAll('node'));
       if (rest.startsWith('GET/')) return await this.#get(up, rest);
@@ -97,9 +106,63 @@ export class FsapiFacade {
       for (const [k, v] of req.query) if (k !== 'pin' && k !== 'sid') params[k] = v;
       const r = await up.raw(rest, params); // LIST_GET_NEXT, LIST_GET and anything else, passed through
       return { status: r.status === 404 ? 200 : r.status, contentType: XML, body: r.status === 404 ? status('FS_FAIL').body : r.body };
-    } catch {
-      return status('FS_TIMEOUT');
+    } catch (e) {
+      return e instanceof FsapiError && e.code === 'FS_NODE_BLOCKED' ? status('FS_NODE_BLOCKED') : status('FS_TIMEOUT');
     }
+  }
+
+  /**
+   * Menu commands. Each app has its own menu position; Radioformer puts the radio's menu back where the app
+   * left it before running the app's command (see NavMultiplexer).
+   */
+  async #nav(sid: string, up: FsapiClient, rest: string, query: URLSearchParams): Promise<FacadeResponse | null> {
+    const nav = navFor(up);
+    const slash = rest.indexOf('/');
+    const verb = slash === -1 ? rest : rest.slice(0, slash);
+    const node = slash === -1 ? '' : rest.slice(slash + 1);
+    const key = lower(node.split('/')[0] ?? '');
+    try {
+      if (verb === 'GET' && key === lower(NAV.state)) return ok(`<value><u8>${nav.isEnabled(sid) ? 1 : 0}</u8></value>\n`);
+      if (verb === 'GET' && key === lower(NAV.numItems)) return this.#raw(await nav.run(sid, (c) => c.raw(rest)));
+      if (verb === 'LIST_GET_NEXT' && (key === lower(NAV.list) || key === lower(NAV.presets))) {
+        const params: Record<string, string> = {};
+        for (const [k, v] of query) if (k !== 'pin' && k !== 'sid') params[k] = v;
+        return this.#raw(await nav.run(sid, (c) => c.raw(rest, params)));
+      }
+      if (verb === 'SET') {
+        const value = query.get('value') ?? '';
+        if (key === lower(NAV.state)) {
+          await (value === '0' ? nav.disable(sid) : nav.enable(sid));
+          return ok();
+        }
+        if (key === lower(NAV.navigate)) {
+          await nav.navigate(sid, Number(value));
+          return ok();
+        }
+        if (key === lower(NAV.selectItem) || key === lower(NAV.selectPreset)) {
+          await nav.run(sid, (c) => c.set(node, Number(value)));
+          return ok();
+        }
+        if (key === MODE_NODE) {
+          const r = await up.raw(rest, { value });
+          this.#cache.clear();
+          await nav.modeChanged();
+          return this.#raw(r);
+        }
+      }
+    } catch (e) {
+      if (e instanceof FsapiError) return status(e.code === 'FS_NODE_BLOCKED' ? 'FS_NODE_BLOCKED' : 'FS_FAIL');
+      throw e;
+    }
+    return null;
+  }
+
+  #picture(xml: string): string {
+    return xml.replace(/<c8_array>([\s\S]*?)<\/c8_array>/, (_m, uri: string) => `<c8_array>${escapeXml(this.#o.rewriteUri(uri.replace(/&amp;/g, '&')))}</c8_array>`);
+  }
+
+  #raw(r: { status: number; body: string }): FacadeResponse {
+    return r.status === 404 ? status('FS_FAIL') : { status: r.status, contentType: XML, body: r.body };
   }
 
   /** What apps are told the radio is called. */
@@ -133,8 +196,9 @@ export class FsapiFacade {
     if (hit && Date.now() - hit.at < this.#o.cacheMs) return { status: 200, contentType: XML, body: hit.xml };
     const r = await up.raw(rest);
     if (r.status !== 200) return status('FS_FAIL');
-    this.#cache.set(key, { xml: r.body, at: Date.now() });
-    return { status: 200, contentType: XML, body: r.body };
+    const body = key === PICTURE_NODE ? this.#picture(r.body) : r.body;
+    this.#cache.set(key, { xml: body, at: Date.now() });
+    return { status: 200, contentType: XML, body };
   }
 
   async #set(up: FsapiClient, rest: string, query: URLSearchParams): Promise<FacadeResponse> {
@@ -152,6 +216,10 @@ export class FsapiFacade {
       for (const [node, resp] of parseMultiple(r.body)) {
         const m = new RegExp(`<fsapiResponse>(?:(?!</fsapiResponse>)[\\s\\S])*<node>${node.replace(/\./g, '\\.')}</node>[\\s\\S]*?</fsapiResponse>`).exec(r.body);
         const entry = m ? m[0] : null;
+        if (entry && lower(node) === PICTURE_NODE) {
+          parts.push(this.#picture(entry));
+          continue;
+        }
         if (entry && node.toLowerCase() === NAME_NODE) {
           parts.push(entry.replace(/<c8_array>[\s\S]*?<\/c8_array>/, `<c8_array>${escapeXml(this.#virtualName)}</c8_array>`));
           continue;
@@ -207,6 +275,8 @@ export class FsapiFacade {
     for (const [sid, s] of this.#sessions) {
       if (s.lastSeen < limit) {
         this.#sessions.delete(sid);
+        const up = this.#o.upstream();
+        if (up) void navFor(up).forget(sid);
         for (const w of s.waiters) w();
       }
     }
@@ -236,7 +306,8 @@ export class FsapiFacade {
   #fanOut(node: string, value: number | string | undefined): void {
     this.#cache.delete(node.toLowerCase());
     if (node.toLowerCase() === 'netremote.sys.info.friendlyname' && typeof value === 'string') this.#name = value;
-    const typed = value === undefined ? '' : typeof value === 'number' ? `<u32>${value}</u32>` : `<c8_array>${escapeXml(value)}</c8_array>`;
+    const shown = typeof value === 'string' && lower(node) === PICTURE_NODE ? this.#o.rewriteUri(value) : value;
+    const typed = shown === undefined ? '' : typeof shown === 'number' ? `<u32>${shown}</u32>` : `<c8_array>${escapeXml(shown)}</c8_array>`;
     const xml = `<notify node="${node}"><value>${typed}</value>\n</notify>\n`;
     for (const s of this.#sessions.values()) {
       s.queue.push({ node, xml });

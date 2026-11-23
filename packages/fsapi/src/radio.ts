@@ -1,12 +1,7 @@
 import { FsapiClient, FsapiError, type FsapiOptions } from './client.ts';
+import { NAV_PARENT, navFor, type NavMultiplexer, type RetryOptions } from './nav.ts';
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-export interface RetryOptions {
-  /** How many times a menu command that the radio reports as "blocked" is tried. */
-  tries?: number;
-  delayMs?: number;
-}
+export type { RetryOptions };
 import { PLAY_STATES, type Mode, type NavItem, type PlayCaps, type RadioStatus, type Transport } from '@radioformer/core';
 import type { FsItem, FsValue } from './xml.ts';
 
@@ -60,27 +55,13 @@ const str = (v: FsValue | undefined): string => (typeof v === 'string' ? v : '')
 export class RadioControl {
   readonly client: FsapiClient;
   #modes: Mode[] | null = null;
-  #navOpen = false;
-  readonly #retry: Required<RetryOptions>;
+  readonly #nav: NavMultiplexer;
+  /** This object is one "app" as far as the radio's menu position is concerned. */
+  static readonly OWNER = 'web';
 
   constructor(opts: FsapiOptions | FsapiClient, retry: RetryOptions = {}) {
     this.client = opts instanceof FsapiClient ? opts : new FsapiClient(opts);
-    this.#retry = { tries: 8, delayMs: 700, ...retry };
-  }
-
-  /**
-   * The radio answers menu commands with FS_NODE_BLOCKED while it is still loading the menu, for example just
-   * after a mode switch or the first time the menu is opened. Waiting a moment and trying again works.
-   */
-  async #whenReady<T>(fn: () => Promise<T>): Promise<T> {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        return await fn();
-      } catch (e) {
-        if (!(e instanceof FsapiError) || e.code !== 'FS_NODE_BLOCKED' || attempt >= this.#retry.tries) throw e;
-        await sleep(this.#retry.delayMs);
-      }
-    }
+    this.#nav = navFor(this.client, retry);
   }
 
   async modes(refresh = false): Promise<Mode[]> {
@@ -131,9 +112,9 @@ export class RadioControl {
   setMute(muted: boolean): Promise<void> {
     return this.client.set(N.mute, muted ? 1 : 0);
   }
-  setMode(key: number): Promise<void> {
-    this.#navOpen = false;
-    return this.client.set(N.mode, key);
+  async setMode(key: number): Promise<void> {
+    await this.client.set(N.mode, key);
+    await this.#nav.modeChanged();
   }
   transport(cmd: Transport): Promise<void> {
     return this.client.set(N.control, TRANSPORT[cmd]);
@@ -157,50 +138,41 @@ export class RadioControl {
     return (await this.client.list(N.eqPresets)).map((i) => ({ key: i.key, label: str(i.fields['label']) }));
   }
 
-  async #openNav(): Promise<void> {
-    if (!this.#navOpen) {
-      await this.#whenReady(() => this.client.set(N.navState, 1));
-      this.#navOpen = true;
-    }
-  }
-
   /** Closes the menu browser on the radio (it returns to the root of the current mode). */
-  async closeNav(): Promise<void> {
-    if (this.#navOpen) await this.client.set(N.navState, 0);
-    this.#navOpen = false;
+  closeNav(): Promise<void> {
+    return this.#nav.disable(RadioControl.OWNER);
   }
 
   async presets(): Promise<{ key: number; name: string }[]> {
-    await this.#openNav();
-    const items = await this.client.list(N.presets);
+    await this.#nav.enable(RadioControl.OWNER);
+    const items = await this.#nav.run(RadioControl.OWNER, (c) => c.list(N.presets));
     return items.filter((i) => str(i.fields['name']).trim()).map((i) => ({ key: i.key, name: str(i.fields['name']).trim() }));
   }
   async selectPreset(key: number): Promise<void> {
-    await this.#openNav();
-    await this.#whenReady(() => this.client.set(N.selectPreset, key));
+    await this.#nav.enable(RadioControl.OWNER);
+    await this.#nav.run(RadioControl.OWNER, (c) => c.set(N.selectPreset, key));
   }
 
   async browse(): Promise<NavItem[]> {
-    await this.#openNav();
-    return (await this.client.list(N.navList)).map(toNavItem);
+    await this.#nav.enable(RadioControl.OWNER);
+    return (await this.#nav.run(RadioControl.OWNER, (c) => c.list(N.navList))).map(toNavItem);
   }
   async enter(key: number): Promise<NavItem[]> {
-    await this.#openNav();
-    await this.#whenReady(() => this.client.set(N.navigate, key));
+    await this.#nav.enable(RadioControl.OWNER);
+    await this.#nav.navigate(RadioControl.OWNER, key);
     return this.browse();
   }
   async back(): Promise<NavItem[]> {
-    await this.#openNav();
-    await this.#whenReady(() => this.client.set(N.navigate, 0xffffffff));
+    await this.#nav.enable(RadioControl.OWNER);
+    await this.#nav.navigate(RadioControl.OWNER, NAV_PARENT);
     return this.browse();
   }
   async play(key: number): Promise<void> {
-    await this.#openNav();
-    await this.#whenReady(() => this.client.set(N.selectItem, key));
+    await this.#nav.enable(RadioControl.OWNER);
+    await this.#nav.run(RadioControl.OWNER, (c) => c.set(N.selectItem, key));
   }
 
   close(): Promise<void> {
-    this.#navOpen = false;
     return this.client.close();
   }
 }

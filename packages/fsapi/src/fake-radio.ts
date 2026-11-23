@@ -14,6 +14,13 @@ export class FakeRadio {
   holdMs = 150;
   /** Writes to these nodes answer FS_NODE_BLOCKED this many times first (menu still loading). */
   readonly blockedWrites = new Map<string, number>();
+  /** The menu position and state of the one session this radio sees (the real radio keeps them per session). */
+  navPath: number[] = [];
+  navEnabled = false;
+  /** Folder path ("" for the root, "1" for folder 1 ...) to its items. */
+  readonly tree = new Map<string, { key: number; name: string; type: number }[]>();
+  selected: string | null = null;
+  selectedPreset: number | null = null;
   #waiters = new Set<() => void>();
   #next = 1000;
   #server: http.Server;
@@ -59,10 +66,19 @@ export class FakeRadio {
       item(1, { name: { t: 'c8_array', v: '' } }),
       item(2, { name: { t: 'c8_array', v: 'M80' } }),
     ]);
-    this.lists.set('netRemote.nav.list', [
-      item(0, { name: { t: 'c8_array', v: 'Radio stations' }, type: { t: 'u8', v: 0 } }),
-      item(1, { name: { t: 'c8_array', v: 'Portugal' }, type: { t: 'u8', v: 0 } }),
-      item(2, { name: { t: 'c8_array', v: 'FIP' }, type: { t: 'u8', v: 2 } }),
+    this.tree.set('', [
+      { key: 0, name: 'Radio stations', type: 0 },
+      { key: 1, name: 'Portugal', type: 0 },
+      { key: 2, name: 'FIP', type: 2 },
+    ]);
+    this.tree.set('0', [
+      { key: 0, name: 'Comercial', type: 2 },
+      { key: 1, name: 'M80', type: 2 },
+    ]);
+    this.tree.set('1', [
+      { key: 0, name: 'Rádio Comercial', type: 2 },
+      { key: 1, name: 'M80', type: 2 },
+      { key: 2, name: 'Radio Comercial Portugal', type: 2 },
     ]);
   }
 
@@ -118,6 +134,21 @@ export class FakeRadio {
       }
       const t = this.nodes.get(node);
       const raw = url.searchParams.get('value') ?? '';
+      if (node === 'netRemote.nav.state') {
+        this.navEnabled = raw === '1';
+        this.navPath = [];
+      } else if (node === 'netRemote.nav.action.navigate') {
+        if (!this.navEnabled) return send('<fsapiResponse><status>FS_NODE_BLOCKED</status></fsapiResponse>');
+        if (Number(raw) === 0xffffffff) this.navPath.pop();
+        else this.navPath.push(Number(raw));
+      } else if (node === 'netRemote.nav.action.selectItem') {
+        this.selected = [...this.navPath, Number(raw)].join('/');
+      } else if (node === 'netRemote.nav.action.selectPreset') {
+        this.selectedPreset = Number(raw);
+      } else if (node === 'netRemote.sys.mode') {
+        this.navEnabled = false;
+        this.navPath = [];
+      }
       if (t) this.nodes.set(node, { t: t.t, v: t.t === 'c8_array' ? raw : Number(raw) });
       else this.nodes.set(node, { t: 'u32', v: Number(raw) });
       return ok();
@@ -138,7 +169,12 @@ export class FakeRadio {
     }
     if (path.startsWith('LIST_GET_NEXT/')) {
       const [, node = '', startRaw = '-1'] = path.split('/');
-      const items = this.lists.get(node);
+      let items = this.lists.get(node);
+      if (node === 'netRemote.nav.list') {
+        if (!this.navEnabled) return send('<fsapiResponse><status>FS_NODE_BLOCKED</status></fsapiResponse>');
+        const folder = this.tree.get(this.navPath.join('/')) ?? [];
+        items = folder.map((i) => ({ key: i.key, fields: { name: { t: 'c8_array', v: i.name }, type: { t: 'u8', v: i.type } } }));
+      }
       if (!items) return send('<fsapiResponse><status>FS_NODE_DOES_NOT_EXIST</status></fsapiResponse>');
       if (node === 'netRemote.nav.list' && this.blockedListReads > 0) {
         this.blockedListReads--;
