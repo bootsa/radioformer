@@ -1,4 +1,5 @@
-import { RadioControl, type RadioStatus } from '@radioformer/fsapi';
+import type { RadioStatus } from '@radioformer/core';
+import { RadioControl } from '@radioformer/fsapi';
 import type { SqliteLibrary } from './library.ts';
 
 /** Keeps one `RadioControl` (one polite session) per radio and rebuilds it when the settings change. */
