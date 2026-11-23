@@ -209,17 +209,16 @@ reported trouble with a similar radio) is unverified.
 
 ### 8.2 Three different things, three verdicts
 
-**A. The radio can be sent a stream to play (UPnP controller).** Feasible and the most valuable piece.
-Radioformer speaks UPnP to the radio itself: `SetAVTransportURI(url)` then `Play`, plus volume and
-transport state. With that, `POST /api/v1/radios/<id>/play { url }` plays anything we can serve over HTTP.
-This does not touch the FSAPI session at all. Music Assistant and other controllers can still talk to the
-radio's renderer directly, or to a *virtual renderer* published by Radioformer that forwards to the real
-one (adds metadata cleaning, URL rewriting through the stream proxy, and one place that serialises
-commands). Risks: renderer quirks (the radio switches into a media mode; stop/pause semantics),
-event subscriptions (callbacks from the radio need a reachable URL), and buffering delay (see C).
-Experiment first, with Steph's go-ahead because it interrupts what the radio is playing: send one
-`SetAVTransportURI` + `Play` for a known AAC stream and watch the response, the mode the radio goes into,
-and what the display shows.
+**A. The radio can be sent a stream to play (UPnP controller).** Feasible and the most valuable piece, and
+now partly proven on the 94i (23 Nov 2026, see 8.4). Radioformer speaks UPnP to the radio itself:
+`SetAVTransportURI(url)` then `Play`, plus volume and transport state. With that,
+`POST /api/v1/radios/<id>/play { url }` plays anything we can serve over HTTP. This does not touch the
+FSAPI session at all. Music Assistant and other controllers can still talk to the radio's renderer
+directly, or to a *virtual renderer* published by Radioformer that forwards to the real one (adds metadata
+cleaning, URL rewriting through the stream proxy, and one place that serialises commands). Remaining risks:
+event subscriptions (callbacks from the radio need a reachable URL), what the radio shows on its display,
+and behaviour when a controller changes the radio's mode (it switches into a "Local Music" UPnP mode and
+the user has to press a button to go back to Internet Radio).
 
 **B. A session-keeping FSAPI proxy ("looks like the radio").** Feasible, moderate effort, moderate value.
 FSAPI is plain HTTP, so a reverse proxy can: hold one upstream session, create virtual sessions for each
@@ -240,8 +239,9 @@ channels; the gain is that UNDOK and Home Assistant stop fighting. Do it after A
   radio to play that URL (A). Radioformer itself stays a plain Node process; shairport-sync needs host
   networking for mDNS and UDP ports 319/320.
 - Latency: classic AirPlay streams carry about two seconds of latency by design (buffered AirPlay 2 about
-  half a second); the radio then adds its own HTTP buffering, unknown until measured and likely several
-  seconds.
+  half a second). The radio's own buffering depends on how the stream is served (see 8.4): a plain,
+  real-time-paced HTTP response started within a few seconds, while a direct Icecast address took about two
+  minutes. The true output delay of the radio is still unmeasured.
 - Synchronised multi-room is **not realistic**. AirPlay groups rely on every receiver playing at the same
   timestamp. The radio pulls a stream and decides when to start playing, so it will play later than the
   other speakers, and nothing can make it play earlier. Music Assistant's per-player delay correction is
@@ -254,6 +254,25 @@ channels; the gain is that UNDOK and Home Assistant stop fighting. Do it after A
 
 Not planned: pretending to be a Spotify Connect device, a Bluetooth bridge, or anything that replaces the
 radio's own firmware.
+
+### 8.4 Experiments on the 94i (23 Nov 2026)
+
+All run against the radio at its LAN address with a person listening. Commands: `SetAVTransportURI`, `Play`,
+`Stop`, `GetTransportInfo`, `GetPositionInfo` over UPnP.
+
+| Test | Result |
+|---|---|
+| FIP AAC straight from Radio France (`icecast.radiofrance.fr`), empty metadata | Accepted and reported "playing", but the display stayed on "Playback buffer" (about 3 of 20) and sound began after about 2 minutes |
+| Same, with a DIDL-Lite metadata document | Refused: `NO_MEDIA_PRESENT`; the radio did not even fetch the URL |
+| FIP through our ICY proxy (plain HTTP/1.0 response, no metadata) | Radio connected within a second; sound within 2 to 3 seconds |
+| A finite 40-second WAV served from the LAN | Started at once; position counter advanced in step with real time |
+| A live, real-time-paced WAV declared 2 GB long (fake file) | Played from the start for two minutes; position counter equal to elapsed time (no extra backlog); audible |
+
+Conclusions: leave `CurrentURIMetaData` empty; serve audio from Radioformer, not directly from third-party
+servers; live audio can be served "as a file" (long declared length, paced in real time). What is **not**
+measured: the actual end-to-end audio delay (a beep against a clock), what the display shows besides the
+URL, and how the radio behaves when the connection drops. Test scripts live outside the repository for now;
+M4 turns them into proper tests with a fake radio.
 
 ### 8.3 Other integrations
 
