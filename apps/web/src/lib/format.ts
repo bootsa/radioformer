@@ -23,3 +23,9 @@ export const STATE_LABEL: Record<string, string> = {
 	error: 'Problem',
 	stopped: 'Stopped'
 };
+
+/** Radios answer "Not Provided" where a source has no text (Bluetooth, AUX); show nothing instead. */
+export const clean = (text: string): string => (/^\s*not provided\s*$/i.test(text) ? '' : text);
+
+/** Sources that have no station presets. */
+export const NO_PRESET_SOURCES = ['Bluetooth', 'AUXIN', 'Spotify', 'DMR', 'MP'];

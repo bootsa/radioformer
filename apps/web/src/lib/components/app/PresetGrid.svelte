@@ -6,14 +6,16 @@
 		presets: Preset[];
 		/** Name of what is playing now, to highlight a matching preset. */
 		playing?: string;
+		/** Shown when there are no presets (the reason depends on the source). */
+		emptyMessage?: string;
 		disabled?: boolean;
 		onSelect: (key: number) => void;
 	}
-	let { presets, playing = '', disabled = false, onSelect }: Props = $props();
+	let { presets, playing = '', emptyMessage = 'No presets saved for this source.', disabled = false, onSelect }: Props = $props();
 </script>
 
 {#if presets.length === 0}
-	<p class="text-muted-foreground text-sm">No presets saved for this source.</p>
+	<p class="text-muted-foreground text-sm">{emptyMessage}</p>
 {:else}
 	<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
 		{#each presets as p (p.key)}

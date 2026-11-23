@@ -14,7 +14,7 @@ beforeEach(async () => {
   const l = await radio.listen();
   port = l.port;
   stop = l.close;
-  control = new RadioControl({ host: '127.0.0.1', port, pin: '1234', idleCloseMs: 0 });
+  control = new RadioControl({ host: '127.0.0.1', port, pin: '1234', idleCloseMs: 0 }, { tries: 4, delayMs: 5 });
 });
 afterEach(async () => {
   await control.close();
@@ -110,4 +110,17 @@ test('change notifications are returned and consumed', async () => {
   radio.notify('netRemote.play.info.text', { t: 'c8_array', v: 'New title' });
   assert.deepEqual(await control.client.notifications(), [{ node: 'netremote.play.info.text', value: 'New title' }]);
   assert.deepEqual(await control.client.notifications(), []);
+});
+
+test('a menu that is still loading is waited for, then the command goes through', async () => {
+  radio.blockedWrites.set('netRemote.nav.action.selectPreset', 2);
+  await control.selectPreset(1);
+  assert.equal(radio.log.filter((l) => l.startsWith('SET/netRemote.nav.action.selectPreset')).length, 3);
+  assert.equal(radio.nodes.get('netRemote.nav.action.selectPreset')?.v, 1);
+});
+
+test('a menu that stays blocked ends in a clear error instead of hanging', async () => {
+  radio.blockedWrites.set('netRemote.nav.action.selectPreset', 99);
+  await assert.rejects(control.selectPreset(1), (e: unknown) => e instanceof FsapiError && e.code === 'FS_NODE_BLOCKED');
+  assert.equal(radio.log.filter((l) => l.startsWith('SET/netRemote.nav.action.selectPreset')).length, 4);
 });

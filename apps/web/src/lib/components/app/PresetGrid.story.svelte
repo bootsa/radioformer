@@ -12,6 +12,9 @@
 	<Hst.Variant title="With a preset playing">
 		<PresetGrid presets={samplePresets} playing="FIP" onSelect={log("preset")} />
 	</Hst.Variant>
+	<Hst.Variant title="No presets in this source">
+		<PresetGrid presets={[]} emptyMessage="This source has no presets." onSelect={log("preset")} />
+	</Hst.Variant>
 	<Hst.Variant title="Empty">
 		<PresetGrid presets={[]} onSelect={log("preset")} />
 	</Hst.Variant>

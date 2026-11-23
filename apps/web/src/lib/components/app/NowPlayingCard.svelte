@@ -3,7 +3,7 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import RadioIcon from '@lucide/svelte/icons/radio';
-	import { formatDuration, STATE_LABEL } from '#lib/format.js';
+	import { clean, formatDuration, STATE_LABEL } from '#lib/format.js';
 
 	interface Props {
 		status: RadioStatus;
@@ -16,9 +16,9 @@
 	}
 	let { status, title, image, album, programme }: Props = $props();
 
-	const headline = $derived(title || status.play.text || status.play.name || 'Nothing playing');
+	const headline = $derived(title || clean(status.play.text) || clean(status.play.name) || 'Nothing playing');
 	const picture = $derived(image || status.play.graphicUri);
-	const sub = $derived([status.play.artist, album || status.play.album].filter(Boolean).join(' · '));
+	const sub = $derived([clean(status.play.artist), album || clean(status.play.album)].filter(Boolean).join(' · '));
 </script>
 
 <Card.Root>
@@ -35,7 +35,7 @@
 				<Badge variant={status.play.state === 'playing' ? 'default' : 'secondary'}>{STATE_LABEL[status.play.state] ?? status.play.state}</Badge>
 				{#if status.mode}<Badge variant="outline">{status.mode.label}</Badge>{/if}
 			</div>
-			<p class="text-muted-foreground truncate text-sm">{status.play.name}</p>
+			{#if clean(status.play.name)}<p class="text-muted-foreground truncate text-sm">{clean(status.play.name)}</p>{/if}
 			<h2 class="text-xl leading-tight font-semibold wrap-break-word sm:text-2xl">{headline}</h2>
 			{#if sub}<p class="text-muted-foreground truncate text-sm">{sub}</p>{/if}
 			{#if programme}<p class="text-muted-foreground truncate text-xs">On air: {programme}</p>{/if}

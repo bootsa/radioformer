@@ -3,6 +3,7 @@
 	import type { EqPreset, Mode, NavItem, NowPlaying, Preset, RadioStatus, Station, Transport } from '@radioformer/core';
 	import { toast } from 'svelte-sonner';
 	import { api, ApiError, watchRadio, type Command } from '#lib/api.js';
+	import { NO_PRESET_SOURCES } from '#lib/format.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
@@ -51,14 +52,41 @@
 		void loadPresets();
 	});
 
-	async function loadPresets() {
+	let presetsToken = 0;
+	let presetsTimer: ReturnType<typeof setTimeout> | undefined;
+	let presetsNote = $state('');
+	const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+	/** The radio needs a moment to load its list after a mode switch; the latest request wins and waits patiently. */
+	async function loadPresets(retries = 6) {
+		const token = ++presetsToken;
 		presets = null;
-		try {
-			presets = await api.presets(id);
-		} catch (e) {
-			presets = [];
-			toast.error(message(e));
+		presetsNote = '';
+		for (let attempt = 0; attempt <= retries; attempt++) {
+			try {
+				const list = await api.presets(id);
+				if (token === presetsToken) presets = list;
+				return;
+			} catch (e) {
+				if (token !== presetsToken) return;
+				const msg = message(e);
+				const stillLoading = /still loading|blocked/i.test(msg);
+				if (!stillLoading || attempt === retries) {
+					presets = [];
+					if (stillLoading) presetsNote = 'The radio is still loading this list. Switch tabs or reload in a moment.';
+					else toast.error(msg);
+					return;
+				}
+				await sleep(2000);
+			}
 		}
+	}
+
+	function reloadPresetsSoon() {
+		presetsToken++; // drop whatever is loading now
+		presets = null;
+		clearTimeout(presetsTimer);
+		presetsTimer = setTimeout(() => void loadPresets(), 2500);
 	}
 
 	// the broadcaster's own feed, when the playing station has one
@@ -163,7 +191,7 @@
 					{modes}
 					current={status.mode?.key ?? null}
 					disabled={!status.power}
-					onSelect={(key) => void send({ type: 'mode', key }, () => setTimeout(loadPresets, 2500))}
+					onSelect={(key) => void send({ type: 'mode', key }, reloadPresetsSoon)}
 				/>
 			</Card.Content>
 		</Card.Root>
@@ -179,7 +207,13 @@
 				{#if presets === null}
 					<Skeleton class="h-24 w-full" />
 				{:else}
-					<PresetGrid {presets} playing={status.play.name} disabled={!status.power} onSelect={(key) => void send({ type: 'preset', key })} />
+					<PresetGrid
+						{presets}
+						playing={status.play.name}
+						disabled={!status.power}
+						emptyMessage={NO_PRESET_SOURCES.includes(status.mode?.id ?? '') ? 'This source has no presets.' : presetsNote || 'No presets saved for this source.'}
+						onSelect={(key) => void send({ type: 'preset', key })}
+					/>
 				{/if}
 			</Tabs.Content>
 			<Tabs.Content value="browse" class="pt-3">

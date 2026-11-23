@@ -12,6 +12,8 @@ export class FakeRadio {
   blockedListReads = 0;
   /** How long GET_NOTIFIES waits when nothing has changed (the real radio waits about 25 s). */
   holdMs = 150;
+  /** Writes to these nodes answer FS_NODE_BLOCKED this many times first (menu still loading). */
+  readonly blockedWrites = new Map<string, number>();
   #waiters = new Set<() => void>();
   #next = 1000;
   #server: http.Server;
@@ -109,6 +111,11 @@ export class FakeRadio {
     }
     if (path.startsWith('SET/')) {
       const node = path.slice(4);
+      const blocked = this.blockedWrites.get(node) ?? 0;
+      if (blocked > 0) {
+        this.blockedWrites.set(node, blocked - 1);
+        return send('<fsapiResponse><status>FS_NODE_BLOCKED</status></fsapiResponse>');
+      }
       const t = this.nodes.get(node);
       const raw = url.searchParams.get('value') ?? '';
       if (t) this.nodes.set(node, { t: t.t, v: t.t === 'c8_array' ? raw : Number(raw) });

@@ -1,4 +1,12 @@
 import { FsapiClient, FsapiError, type FsapiOptions } from './client.ts';
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+export interface RetryOptions {
+  /** How many times a menu command that the radio reports as "blocked" is tried. */
+  tries?: number;
+  delayMs?: number;
+}
 import { PLAY_STATES, type Mode, type NavItem, type PlayCaps, type RadioStatus, type Transport } from '@radioformer/core';
 import type { FsItem, FsValue } from './xml.ts';
 
@@ -53,9 +61,26 @@ export class RadioControl {
   readonly client: FsapiClient;
   #modes: Mode[] | null = null;
   #navOpen = false;
+  readonly #retry: Required<RetryOptions>;
 
-  constructor(opts: FsapiOptions | FsapiClient) {
+  constructor(opts: FsapiOptions | FsapiClient, retry: RetryOptions = {}) {
     this.client = opts instanceof FsapiClient ? opts : new FsapiClient(opts);
+    this.#retry = { tries: 8, delayMs: 700, ...retry };
+  }
+
+  /**
+   * The radio answers menu commands with FS_NODE_BLOCKED while it is still loading the menu, for example just
+   * after a mode switch or the first time the menu is opened. Waiting a moment and trying again works.
+   */
+  async #whenReady<T>(fn: () => Promise<T>): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await fn();
+      } catch (e) {
+        if (!(e instanceof FsapiError) || e.code !== 'FS_NODE_BLOCKED' || attempt >= this.#retry.tries) throw e;
+        await sleep(this.#retry.delayMs);
+      }
+    }
   }
 
   async modes(refresh = false): Promise<Mode[]> {
@@ -134,7 +159,7 @@ export class RadioControl {
 
   async #openNav(): Promise<void> {
     if (!this.#navOpen) {
-      await this.client.set(N.navState, 1);
+      await this.#whenReady(() => this.client.set(N.navState, 1));
       this.#navOpen = true;
     }
   }
@@ -152,7 +177,7 @@ export class RadioControl {
   }
   async selectPreset(key: number): Promise<void> {
     await this.#openNav();
-    await this.client.set(N.selectPreset, key);
+    await this.#whenReady(() => this.client.set(N.selectPreset, key));
   }
 
   async browse(): Promise<NavItem[]> {
@@ -161,17 +186,17 @@ export class RadioControl {
   }
   async enter(key: number): Promise<NavItem[]> {
     await this.#openNav();
-    await this.client.set(N.navigate, key);
+    await this.#whenReady(() => this.client.set(N.navigate, key));
     return this.browse();
   }
   async back(): Promise<NavItem[]> {
     await this.#openNav();
-    await this.client.set(N.navigate, 0xffffffff);
+    await this.#whenReady(() => this.client.set(N.navigate, 0xffffffff));
     return this.browse();
   }
   async play(key: number): Promise<void> {
     await this.#openNav();
-    await this.client.set(N.selectItem, key);
+    await this.#whenReady(() => this.client.set(N.selectItem, key));
   }
 
   close(): Promise<void> {
