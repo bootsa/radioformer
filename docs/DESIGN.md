@@ -182,17 +182,83 @@ Goals: cleaner titles, HLS-only stations, TLS the radio cannot do.
 - HLS (later, optional): `ffmpeg -c copy` to a continuous ADTS/AAC stream, started on demand and stopped
   when the last listener leaves. Adds ffmpeg to the image, so it ships as a separate image tag.
 
-## 8. Other systems
+## 8. Other systems: control proxy, UPnP bridge, AirPlay (optional)
 
-Home Assistant's Frontier Silicon integration can only choose the radio's own channels (its source code
-rejects every media type except `channel`), and Music Assistant's UPnP route to these radios is reported
-unreliable. The server side has one option those cannot offer: a station on the radio's list can point at a
-stream made by this server. So the plan is:
+Background. Home Assistant's Frontier Silicon integration can only choose the radio's own channels (its
+source code rejects every media type except `channel`), and reports show the radio's control interface
+being tied up by one client at a time (a stale session blocking the UNDOK app until Home Assistant was
+restarted; `FS_NODE_BLOCKED` when a client iterates long lists). Music Assistant's UPnP route to a Medion
+radio was reported unreliable. Steph asked whether a proxy that looks like the radio could keep one session
+alive and share it, and whether an AirPlay receiver could feed the radio. This section records what the
+radio really exposes (read from the 94i on the LAN, no commands sent) and what is feasible.
+
+### 8.1 What the 94i exposes
+
+| Interface | Where | What we saw |
+|---|---|---|
+| FSAPI discovery | `GET http://<radio>/device` | `<netRemote><friendlyName/><version/><webfsapi>http://<radio>:80/fsapi</webfsapi></netRemote>` |
+| FSAPI | `http://<radio>/fsapi/...` | Requests carry a PIN and a session id (`sid`); not probed, to avoid disturbing Home Assistant |
+| UPnP description | `http://<radio>:8080/dd.xml` | Device type `MediaRenderer:1` (Intel MicroStack), vendor id `undok`, features "Spotify, DAB, FM, IR, Aux-In, Media, DMR" |
+| UPnP AVTransport | `:8080/AVTransport/control` | `SetAVTransportURI`, `SetNextAVTransportURI`, `Play`, `Pause`, `Stop`, `Seek`, `Next`, `Previous`, `GetPositionInfo`, `GetTransportInfo`, ... |
+| UPnP RenderingControl | `:8080/RenderingControl/control` | `SetVolume`, `GetVolume`, `SetMute`, presets |
+| UPnP ConnectionManager | `:8080/ConnectionManager/control` | Sink formats include `audio/flac`, `audio/3gpp` and raw PCM `audio/L16` at 8 to 48 kHz, mono to 8 channels; the full list was not read |
+
+The important finding: the radio is a standard DLNA/UPnP media renderer that **pulls** a URL we give it. It
+is not limited to the stations in its own menu. Whether it behaves well in practice (Music Assistant
+reported trouble with a similar radio) is unverified.
+
+### 8.2 Three different things, three verdicts
+
+**A. The radio can be sent a stream to play (UPnP controller).** Feasible and the most valuable piece.
+Radioformer speaks UPnP to the radio itself: `SetAVTransportURI(url)` then `Play`, plus volume and
+transport state. With that, `POST /api/v1/radios/<id>/play { url }` plays anything we can serve over HTTP.
+This does not touch the FSAPI session at all. Music Assistant and other controllers can still talk to the
+radio's renderer directly, or to a *virtual renderer* published by Radioformer that forwards to the real
+one (adds metadata cleaning, URL rewriting through the stream proxy, and one place that serialises
+commands). Risks: renderer quirks (the radio switches into a media mode; stop/pause semantics),
+event subscriptions (callbacks from the radio need a reachable URL), and buffering delay (see C).
+Experiment first, with Steph's go-ahead because it interrupts what the radio is playing: send one
+`SetAVTransportURI` + `Play` for a known AAC stream and watch the response, the mode the radio goes into,
+and what the display shows.
+
+**B. A session-keeping FSAPI proxy ("looks like the radio").** Feasible, moderate effort, moderate value.
+FSAPI is plain HTTP, so a reverse proxy can: hold one upstream session, create virtual sessions for each
+client (Home Assistant, UNDOK, scripts) and map them onto it, serialise requests (the radio copes badly
+with parallel or long list walks), cache cheap reads (volume, mode, now playing) for a few seconds, and
+retry with a fresh session when the radio drops the old one. Notifications (`GET_NOTIFIES`) need fan-out,
+which is the genuinely fiddly part. To be discovered without configuration it must answer SSDP and serve
+the same `/device` document, pointing `webfsapi` at itself; Home Assistant can also simply be given the
+proxy's address. Risks: firmware quirks we cannot see until we capture real traffic (PIN handling,
+session limits and lifetimes, notification semantics), and a radio that becomes unreachable behind the
+proxy takes every client with it. Value is limited because Home Assistant's integration still only selects
+channels; the gain is that UNDOK and Home Assistant stop fighting. Do it after A.
+
+**C. AirPlay receiver feeding the radio.** Feasible as an optional extra, not light.
+- Shape: a separate container runs shairport-sync (with nqptp for AirPlay 2) writing PCM to a pipe; a small
+  process turns that into an HTTP stream (`/s/airplay`) either as raw `audio/L16` (the radio accepts it, no
+  encoding, lowest latency, about 1.4 Mbit/s on the LAN) or AAC through ffmpeg; Radioformer then tells the
+  radio to play that URL (A). Radioformer itself stays a plain Node process; shairport-sync needs host
+  networking for mDNS and UDP ports 319/320.
+- Latency: classic AirPlay streams carry about two seconds of latency by design (buffered AirPlay 2 about
+  half a second); the radio then adds its own HTTP buffering, unknown until measured and likely several
+  seconds.
+- Synchronised multi-room is **not realistic**. AirPlay groups rely on every receiver playing at the same
+  timestamp. The radio pulls a stream and decides when to start playing, so it will play later than the
+  other speakers, and nothing can make it play earlier. Music Assistant's per-player delay correction is
+  only up to plus or minus half a second, and it can only delay the other speakers, which is not enough
+  against seconds of radio buffering. What we can offer: the radio as a single-room AirPlay target
+  (video lip-sync not guaranteed), possibly roughly aligned with another speaker after a manual offset.
+- Cost: an arm64 build of shairport-sync and nqptp is available from distributions; CPU for L16 is
+  negligible, for AAC encoding a small share of one core. The real cost is the second container and its
+  network setup.
+
+Not planned: pretending to be a Spotify Connect device, a Bluetooth bridge, or anything that replaces the
+radio's own firmware.
+
+### 8.3 Other integrations
 
 1. A REST API and an event stream, so anything can read "what is playing" and manage stations.
-2. A generic "inbound stream" station type: a station whose audio comes from a URL on this server.
-   Whether Music Assistant can publish a continuous stream we can point at is unverified; the experiment
-   comes after milestone 2, not before.
+2. Per-radio control through A, exposed in the web app (play URL, volume, stop).
 3. MQTT discovery for Home Assistant (sensors for connected radios and now playing) as an integration.
 
 ## 9. Testing
@@ -231,7 +297,9 @@ Mobile-first, dark/light, keyboard friendly.
 | M1 | XML protocol, own stations in SQLite, stream proxy with ICY cleaning, import of Radio-API data, logos by upload | 94i plays our stations with clean titles; fixtures pass |
 | M2 | REST API, web app (library, search over radio-browser, logos, radios page), auth | Everything M1 can be managed from a browser |
 | M3 | Podcasts, JSON protocol for newer radios | Podcast episodes play; a JSON-API radio connects (needs one to test) |
-| M4 | Integrations: events, MQTT/HA, inbound stream experiment, HLS remux | Each integration documented and tested |
+| M4 | UPnP controller and virtual renderer (after the experiment in 8.2 A), events, MQTT/HA, HLS remux | Music Assistant or the web app plays a URL on the 94i; each integration documented and tested |
+| M5 | FSAPI session-keeping proxy with SSDP advertisement (8.2 B) | Home Assistant and UNDOK work at the same time through it; notifications reach both |
+| M6 | Optional: AirPlay receiver container feeding the radio (8.2 C) | An iPhone plays to the radio; measured delay documented; no sync claims |
 
 ## 12. What already exists
 
@@ -242,6 +310,8 @@ Mobile-first, dark/light, keyboard friendly.
 
 ## 13. Risks and open questions
 
+- Radio behaviour: UPnP and FSAPI behaviour is unverified beyond the descriptors read so far; M4 starts with
+  an experiment, and M5 starts by capturing real FSAPI traffic.
 - Protocol coverage: older radios from other vendors may use other vendor paths or fields. We only have one
   radio to test with; the design keeps vendor-specific bits in `protocol-xml` configuration.
 - Licence: porting protocol behaviour closely from Radio-API makes the result a derivative of GPL-3.0 code.
