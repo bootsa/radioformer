@@ -33,7 +33,7 @@ const value = (body: string) => /<value><(?:u8|u32|s16|c8_array)>([^<]*)</.exec(
 test('the device document points apps at the virtual radio', async () => {
   facade.learn('DanceHall', 'ir-mmi-test');
   const r = await call('/device');
-  assert.match(r.body, /<friendlyName>DanceHall<\/friendlyName>/);
+  assert.match(r.body, /<friendlyName>DanceHall\+<\/friendlyName>/);
   assert.match(r.body, /<webfsapi>http:\/\/radio\.test:8082\/fsapi<\/webfsapi>/);
 });
 
@@ -114,4 +114,18 @@ test('when the real radio is unreachable the app gets an FSAPI error, not a cras
   assert.match(r.body, /FS_TIMEOUT/);
   dead.close();
   void sid;
+});
+
+test('apps are told the virtual name everywhere, and cannot rename the real radio', async () => {
+  facade.learn('DanceHall', 'x');
+  const sid = await open();
+  assert.equal(value((await call('/fsapi/GET/netRemote.sys.info.friendlyName', { sid })).body), 'DanceHall+');
+  const multi = await call('/fsapi/GET_MULTIPLE', { sid, node: ['netRemote.sys.info.friendlyName', 'netRemote.sys.power'] });
+  assert.match(multi.body, /<c8_array>DanceHall\+<\/c8_array>/);
+  assert.match(multi.body, /<u8>1<\/u8>/);
+  assert.match((await call('/fsapi/SET/netRemote.sys.info.friendlyName', { sid, value: 'Hacked' })).body, /FS_FAIL/);
+  assert.equal(radio.nodes.get('netRemote.sys.info.friendlyName')?.v, 'DanceHall');
+  const named = new FsapiFacade({ upstream: () => client, pin: '4321', friendlyName: 'Radioformer' });
+  assert.match((await named.handle({ path: '/device', query: new URLSearchParams({ pin: '4321' }), host: 'h' })).body, /<friendlyName>Radioformer<\/friendlyName>/);
+  named.close();
 });

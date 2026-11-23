@@ -7,6 +7,8 @@ export interface FacadeServerOptions {
   host: string;
   pin: string;
   radioId: number;
+  /** Name apps see; empty means the radio's name plus "+". */
+  name: string;
   manager: RadioManager;
   log: (msg: string) => void;
 }
@@ -16,7 +18,7 @@ export interface FacadeServerOptions {
  * pointed here instead of at the radio, and Radioformer keeps the only real session.
  */
 export function startFacade(opts: FacadeServerOptions): { close(): Promise<void> } {
-  const facade = new FsapiFacade({ upstream: () => opts.manager.get(opts.radioId)?.client ?? null, pin: opts.pin });
+  const facade = new FsapiFacade({ upstream: () => opts.manager.get(opts.radioId)?.client ?? null, pin: opts.pin, friendlyName: opts.name });
 
   const refreshIdentity = async () => {
     try {

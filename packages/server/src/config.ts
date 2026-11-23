@@ -21,6 +21,8 @@ const Env = z.object({
   FSAPI_FACE_PORT: z.coerce.number().int().min(0).max(65535).default(0),
   /** PIN the apps use on that face; the radio's own default is 1234. */
   FSAPI_FACE_PIN: z.string().regex(/^\d{4}$/).default('1234'),
+  /** The name apps see (empty: the radio's name plus a "+"). */
+  FSAPI_FACE_NAME: z.string().max(60).default(''),
   /** Which radio it fronts. */
   FSAPI_FACE_RADIO: z.coerce.number().int().min(1).default(1),
   MAX_STREAMS: z.coerce.number().int().min(1).max(100).default(8),

@@ -7,7 +7,7 @@ export interface FacadeOptions {
   upstream: () => FsapiClient | null;
   /** PIN that apps must use to talk to the virtual radio. */
   pin: string;
-  /** Used until the real radio's name and version are known. */
+  /** The name apps see. Default: the real radio's name followed by "+", so the two are never confused. */
   friendlyName?: string;
   version?: string;
   /** Virtual sessions idle for this long are dropped. */
@@ -38,6 +38,7 @@ interface Session {
 }
 
 const XML = 'text/xml';
+const NAME_NODE = 'netremote.sys.info.friendlyname';
 const ok = (inner = ''): FacadeResponse => ({ status: 200, contentType: XML, body: `<fsapiResponse>\n<status>FS_OK</status>\n${inner}</fsapiResponse>\n` });
 const status = (code: string): FacadeResponse => ({ status: 200, contentType: XML, body: `<fsapiResponse><status>${code}</status></fsapiResponse>\n` });
 const text = (code: number, body = ''): FacadeResponse => ({ status: code, contentType: XML, body });
@@ -63,7 +64,7 @@ export class FsapiFacade {
   #version = '';
 
   constructor(opts: FacadeOptions) {
-    this.#o = { friendlyName: 'Radio', version: 'radioformer', sessionTtlMs: 10 * 60_000, cacheMs: 1000, keepAliveMs: 10_000, ...opts };
+    this.#o = { friendlyName: '', version: 'radioformer', sessionTtlMs: 10 * 60_000, cacheMs: 1000, keepAliveMs: 10_000, ...opts };
   }
 
   get sessionCount(): number {
@@ -101,11 +102,20 @@ export class FsapiFacade {
     }
   }
 
+  /** What apps are told the radio is called. */
+  get virtualName(): string {
+    return this.#virtualName;
+  }
+
+  get #virtualName(): string {
+    return this.#o.friendlyName || (this.#name ? `${this.#name}+` : 'Radio+');
+  }
+
   #device(host: string): FacadeResponse {
     return {
       status: 200,
       contentType: XML,
-      body: `<netRemote>\n<friendlyName>${escapeXml(this.#name || this.#o.friendlyName)}</friendlyName>\n<version>${escapeXml(this.#version || this.#o.version)}</version>\n<webfsapi>http://${host}/fsapi</webfsapi>\n</netRemote>\n`,
+      body: `<netRemote>\n<friendlyName>${escapeXml(this.#virtualName)}</friendlyName>\n<version>${escapeXml(this.#version || this.#o.version)}</version>\n<webfsapi>http://${host}/fsapi</webfsapi>\n</netRemote>\n`,
     };
   }
 
@@ -118,6 +128,7 @@ export class FsapiFacade {
 
   async #get(up: FsapiClient, rest: string): Promise<FacadeResponse> {
     const key = rest.slice(4).toLowerCase();
+    if (key === NAME_NODE) return ok(`<value><c8_array>${escapeXml(this.#virtualName)}</c8_array></value>\n`);
     const hit = this.#cache.get(key);
     if (hit && Date.now() - hit.at < this.#o.cacheMs) return { status: 200, contentType: XML, body: hit.xml };
     const r = await up.raw(rest);
@@ -127,6 +138,7 @@ export class FsapiFacade {
   }
 
   async #set(up: FsapiClient, rest: string, query: URLSearchParams): Promise<FacadeResponse> {
+    if (rest.slice(4).toLowerCase() === NAME_NODE) return status('FS_FAIL'); // the radio's real name is not for apps to change
     const r = await up.raw(rest, { value: query.get('value') ?? '' });
     this.#cache.delete(rest.slice(4).toLowerCase());
     return r.status === 200 ? { status: 200, contentType: XML, body: r.body } : status('FS_FAIL');
@@ -139,6 +151,11 @@ export class FsapiFacade {
       const r = await up.raw('GET_MULTIPLE', { node: nodes.slice(i, i + MAX_MULTIPLE) });
       for (const [node, resp] of parseMultiple(r.body)) {
         const m = new RegExp(`<fsapiResponse>(?:(?!</fsapiResponse>)[\\s\\S])*<node>${node.replace(/\./g, '\\.')}</node>[\\s\\S]*?</fsapiResponse>`).exec(r.body);
+        const entry = m ? m[0] : null;
+        if (entry && node.toLowerCase() === NAME_NODE) {
+          parts.push(entry.replace(/<c8_array>[\s\S]*?<\/c8_array>/, `<c8_array>${escapeXml(this.#virtualName)}</c8_array>`));
+          continue;
+        }
         parts.push(m ? m[0] : `<fsapiResponse>\n<node>${node}</node>\n<status>${resp.status}</status>\n</fsapiResponse>`);
       }
     }
