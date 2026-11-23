@@ -107,7 +107,7 @@ export async function connectStream(req: StreamRequest, depth = 0): Promise<Stre
     async pump(out) {
       source.resume();
       try {
-        await pipeline(source, ...stages, out);
+        await pipeline([source, ...stages, out]);
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
         if (code !== 'ERR_STREAM_PREMATURE_CLOSE' && code !== 'ECONNRESET' && code !== 'EPIPE') throw err;
