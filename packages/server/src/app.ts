@@ -14,13 +14,15 @@ import { fetchImage, getDefaultLogo, sha256, toRadioPng } from './logos.ts';
 import { assertPublicUpstream } from './net-guard.ts';
 import { isRadioHost, passthrough } from './passthrough.ts';
 import { startFacade } from './facade-server.ts';
+import { startUpnpFace } from './upnp/server.ts';
+import { rendererUuid } from './ssdp.ts';
 import { registerRadioRoutes } from './radio-routes.ts';
 import { RadioManager } from './radios.ts';
 
 export const VERSION = '0.1.0';
 
 type AppConfig = Pick<Config, 'WEB_DIR' | 'LOG_LEVEL' | 'ADMIN_TOKEN' | 'PUBLIC_URL' | 'ALLOW_PRIVATE_UPSTREAMS' | 'MAX_STREAMS'> &
-  Partial<Pick<Config, 'FSAPI_FACE_PORT' | 'FSAPI_FACE_PIN' | 'FSAPI_FACE_RADIO' | 'FSAPI_FACE_NAME' | 'FSAPI_FACE_ASSET_URL'>>;
+  Partial<Pick<Config, 'FSAPI_FACE_PORT' | 'FSAPI_FACE_PIN' | 'FSAPI_FACE_RADIO' | 'FSAPI_FACE_NAME' | 'FSAPI_FACE_ASSET_URL' | 'UPNP_FACE_PORT' | 'UPNP_FACE_NAME' | 'UPNP_FACE_RADIO' | 'UPNP_FACE_UUID' | 'UPNP_FACE_PUBLIC_URL' | 'UPNP_FACE_MODE'>>;
 
 function baseUrl(req: FastifyRequest, config: AppConfig): string {
   if (config.PUBLIC_URL) return config.PUBLIC_URL.replace(/\/$/, '');
@@ -187,6 +189,23 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary, deps: 
       log: (m) => app.log.info(m),
     });
     app.addHook('onClose', async () => face.close());
+  }
+  if (config.UPNP_FACE_PORT) {
+    const radioId = config.UPNP_FACE_RADIO ?? 1;
+    const label = library.getRadio(radioId)?.label ?? '';
+    const upnp = startUpnpFace({
+      port: config.UPNP_FACE_PORT,
+      host: '0.0.0.0',
+      radioId,
+      uuid: config.UPNP_FACE_UUID ?? rendererUuid(radioId),
+      name: config.UPNP_FACE_NAME || (label ? `${label}+` : 'Radioformer'),
+      modePattern: new RegExp(config.UPNP_FACE_MODE ?? 'music player', 'i'),
+      publicBase: config.UPNP_FACE_PUBLIC_URL,
+      manager,
+      radioHost: () => library.getRadio(radioId)?.host || null,
+      log: (m) => app.log.info(m),
+    });
+    app.addHook('onClose', async () => upnp.close());
   }
 
   // ---- sign-in for the web app ----

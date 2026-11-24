@@ -49,3 +49,10 @@ test('a running responder answers matching searches only', async () => {
     await s.close();
   }
 });
+
+test('a second device in the same responder has its own identity', () => {
+  const dev = { st: 'uuid:dev-1', uuid: 'dev-1', location: (ip: string) => `http://${ip}:8083/upnp/desc.xml` };
+  assert.match(searchResponse(dev, 'main', '10.0.0.2'), /USN: uuid:dev-1\r\n/);
+  const type = { st: 'urn:schemas-upnp-org:device:MediaRenderer:1', uuid: 'dev-1', location: dev.location };
+  assert.match(searchResponse(type, 'main', '10.0.0.2'), /USN: uuid:dev-1::urn:schemas-upnp-org:device:MediaRenderer:1\r\n/);
+});

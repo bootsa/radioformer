@@ -8,6 +8,8 @@ export interface Advertisement {
   st: string;
   /** Builds the description address for a given local IPv4 (the address the asker can reach us on). */
   location: (localAddress: string) => string;
+  /** Identity this advertisement belongs to, when it is not the process's own (a second device). */
+  uuid?: string;
   /** The SERVER header apps may look at. */
   server?: string;
 }
@@ -31,6 +33,19 @@ export function stableUuid(name: string): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
+/** Identity of the renderer face for a radio: the web process and the SSDP helper both derive it, so they agree without being told. */
+export function rendererUuid(radioId: number): string {
+  return stableUuid(`upnp-renderer:${radioId}`);
+}
+
+export const UPNP_TYPES = [
+  'upnp:rootdevice',
+  'urn:schemas-upnp-org:device:MediaRenderer:1',
+  'urn:schemas-upnp-org:service:AVTransport:1',
+  'urn:schemas-upnp-org:service:ConnectionManager:1',
+  'urn:schemas-upnp-org:service:RenderingControl:1',
+];
+
 export function parseSearch(msg: string): { st: string } | null {
   const lines = msg.split(/\r?\n/);
   if (!/^M-SEARCH \* HTTP\/1\.1/i.test(lines[0] ?? '')) return null;
@@ -44,6 +59,12 @@ export function parseSearch(msg: string): { st: string } | null {
   return st ? { st } : null;
 }
 
+/** The unique name of one advertisement: the device itself is just `uuid:...`, everything else is `uuid:...::<type>`. */
+function usnFor(ad: Advertisement, defaultUuid: string): string {
+  const uuid = ad.uuid ?? defaultUuid;
+  return ad.st === `uuid:${uuid}` ? ad.st : `uuid:${uuid}::${ad.st}`;
+}
+
 export function searchResponse(ad: Advertisement, uuid: string, localAddress: string): string {
   return [
     'HTTP/1.1 200 OK',
@@ -52,7 +73,7 @@ export function searchResponse(ad: Advertisement, uuid: string, localAddress: st
     `LOCATION: ${ad.location(localAddress)}`,
     `SERVER: ${ad.server ?? 'FOS/1.0 UPnP/1.0 Radioformer/0.1'}`,
     `ST: ${ad.st}`,
-    `USN: uuid:${uuid}::${ad.st}`,
+    `USN: ${usnFor(ad, uuid)}`,
     '',
     '',
   ].join('\r\n');
@@ -66,7 +87,7 @@ export function notifyMessage(ad: Advertisement, uuid: string, localAddress: str
     `NT: ${ad.st}`,
     `NTS: ssdp:${alive ? 'alive' : 'byebye'}`,
     `SERVER: ${ad.server ?? 'FOS/1.0 UPnP/1.0 Radioformer/0.1'}`,
-    `USN: uuid:${uuid}::${ad.st}`,
+    `USN: ${usnFor(ad, uuid)}`,
     '',
     '',
   ].join('\r\n');
