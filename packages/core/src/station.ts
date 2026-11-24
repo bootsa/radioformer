@@ -23,6 +23,11 @@ export const Station = z.object({
    * `{artist} - {title}[ · On air: {programme}][ · Next: {next}]`. Empty means "Artist - Title".
    */
   titleTemplate: z.string().max(300).default(''),
+  /**
+   * The id this station has in the radio's original directory (Airable), when it is a counterpart of one.
+   * The radio is shown this id, so presets keep working if Radioformer's DNS is ever bypassed. Empty means none.
+   */
+  directoryId: z.string().regex(/^\d{10,19}$|^$/).default(''),
   metadataSource: z.string().regex(/^[a-z]{2,20}:[A-Za-z0-9_-]{1,30}$|^$/).default(''),
 });
 export type Station = z.infer<typeof Station>;

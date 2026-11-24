@@ -39,6 +39,7 @@ export function convertRadioApi(entries: unknown): ImportResult {
       collection: typeof e.category === 'string' ? e.category.slice(0, 100) : '',
       metadataSource: '',
       titleTemplate: '',
+      directoryId: '',
     });
   }
   return result;

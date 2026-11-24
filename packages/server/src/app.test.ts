@@ -60,7 +60,7 @@ test('invalid stations are rejected', async () => {
 
 test('a radio can log in, browse and fetch a station, and is remembered', async () => {
   const { app, library } = await setup();
-  library.createStation({ name: 'FIP', streamUrl: 'https://icecast.radiofrance.fr/fip-hifi.aac', logoId: null, description: '', country: '', language: '', tags: [], transformer: 'none', proxyMode: 'auto', collection: '', metadataSource: '', titleTemplate: '' });
+  library.createStation({ name: 'FIP', streamUrl: 'https://icecast.radiofrance.fr/fip-hifi.aac', logoId: null, description: '', country: '', language: '', tags: [], transformer: 'none', proxyMode: 'auto', collection: '', metadataSource: '', titleTemplate: '', directoryId: '' });
   const host = { host: 'radio.wifiradiofrontier.com' };
   const login = await app.inject({ url: '/setupapp/Roberts/asp/BrowseXML/loginXML.asp?token=0', headers: host });
   assert.equal(login.body, '<EncryptedToken>3a3f5ac48a1dab4e</EncryptedToken>');
@@ -78,7 +78,7 @@ test('a radio can log in, browse and fetch a station, and is remembered', async 
 
 test('a station with a transformer is played through our proxy', async () => {
   const { app, library } = await setup();
-  library.createStation({ name: 'M80', streamUrl: 'https://stream-icy.bauermedia.pt/m80.aac', logoId: null, description: '', country: '', language: '', tags: [], transformer: 'dalet-xml', proxyMode: 'auto', collection: '', metadataSource: '', titleTemplate: '' });
+  library.createStation({ name: 'M80', streamUrl: 'https://stream-icy.bauermedia.pt/m80.aac', logoId: null, description: '', country: '', language: '', tags: [], transformer: 'dalet-xml', proxyMode: 'auto', collection: '', metadataSource: '', titleTemplate: '', directoryId: '' });
   const detail = await app.inject({ url: `/?sSearchtype=3&Search=1000&mac=${MAC}`, headers: { host: 'radio.test:8080' } });
   assert.match(detail.body, /<StationUrl>http:\/\/radio\.test:8080\/s\/1000<\/StationUrl>/);
   await app.close();
@@ -112,7 +112,7 @@ function fakeIcecast(): Promise<{ port: number; close: () => void }> {
 test('the stream proxy cleans titles for radios that ask for metadata', async () => {
   const fake = await fakeIcecast();
   const { app, library } = await setup({ ALLOW_PRIVATE_UPSTREAMS: true } as never);
-  library.createStation({ name: 'Test', streamUrl: `http://127.0.0.1:${fake.port}/live`, logoId: null, description: '', country: '', language: '', tags: [], transformer: 'dalet-xml', proxyMode: 'proxy', collection: '', metadataSource: '', titleTemplate: '' });
+  library.createStation({ name: 'Test', streamUrl: `http://127.0.0.1:${fake.port}/live`, logoId: null, description: '', country: '', language: '', tags: [], transformer: 'dalet-xml', proxyMode: 'proxy', collection: '', metadataSource: '', titleTemplate: '', directoryId: '' });
   const res = await app.inject({ url: '/s/1000', headers: { 'icy-metadata': '1' } });
   assert.equal(res.statusCode, 200);
   assert.equal(res.headers['icy-metaint'], '32');
@@ -127,7 +127,7 @@ test('the stream proxy cleans titles for radios that ask for metadata', async ()
 test('the stream proxy refuses private upstreams by default', async () => {
   const fake = await fakeIcecast();
   const { app, library } = await setup();
-  library.createStation({ name: 'Local', streamUrl: `http://127.0.0.1:${fake.port}/live`, logoId: null, description: '', country: '', language: '', tags: [], transformer: 'none', proxyMode: 'proxy', collection: '', metadataSource: '', titleTemplate: '' });
+  library.createStation({ name: 'Local', streamUrl: `http://127.0.0.1:${fake.port}/live`, logoId: null, description: '', country: '', language: '', tags: [], transformer: 'none', proxyMode: 'proxy', collection: '', metadataSource: '', titleTemplate: '', directoryId: '' });
   assert.equal((await app.inject('/s/1000')).statusCode, 502);
   assert.equal((await app.inject('/s/4242')).statusCode, 404);
   fake.close();
@@ -158,7 +158,7 @@ test('a station logo is fetched, resized, stored and served, and the radio is to
   const img = http.createServer((_q, res) => res.writeHead(200, { 'Content-Type': 'image/svg+xml' }).end('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><circle cx="150" cy="150" r="100" fill="#c33"/></svg>'));
   await new Promise<void>((r) => img.listen(0, '127.0.0.1', r));
   const { app, library } = await setup({ ALLOW_PRIVATE_UPSTREAMS: true } as never);
-  library.createStation({ name: 'FIP', streamUrl: 'http://x/y', logoId: null, description: '', country: '', language: '', tags: [], transformer: 'none', proxyMode: 'direct', collection: '', metadataSource: '', titleTemplate: '' });
+  library.createStation({ name: 'FIP', streamUrl: 'http://x/y', logoId: null, description: '', country: '', language: '', tags: [], transformer: 'none', proxyMode: 'direct', collection: '', metadataSource: '', titleTemplate: '', directoryId: '' });
   try {
     const res = await app.inject({ method: 'POST', url: '/api/v1/stations/1000/logo', headers: auth, payload: { url: `http://127.0.0.1:${(img.address() as net.AddressInfo).port}/logo.svg` } });
     assert.equal(res.statusCode, 200);
@@ -202,7 +202,7 @@ test('a station with a metadata source gets its title injected into a stream tha
   const metadata = new MetadataHub({ providers: { fake: { fetch: async () => ({ title: 'Ana - Song', track: null, programme: null, previous: [], next: null, fetchedAt: 0 }) } } });
   const library = new SqliteLibrary(openDb(':memory:'));
   const app = await buildApp({ WEB_DIR: '/x', LOG_LEVEL: 'silent', ADMIN_TOKEN: TOKEN, ALLOW_PRIVATE_UPSTREAMS: true, MAX_STREAMS: 2 } as Parameters<typeof buildApp>[0], library, { metadata });
-  library.createStation({ name: 'FIP', streamUrl: `http://127.0.0.1:${fake.port}/live`, logoId: null, description: '', country: '', language: '', tags: [], transformer: 'none', proxyMode: 'auto', collection: '', metadataSource: 'fake:7', titleTemplate: '' });
+  library.createStation({ name: 'FIP', streamUrl: `http://127.0.0.1:${fake.port}/live`, logoId: null, description: '', country: '', language: '', tags: [], transformer: 'none', proxyMode: 'auto', collection: '', metadataSource: 'fake:7', titleTemplate: '', directoryId: '' });
   try {
   const res = await app.inject({ url: '/s/1000', headers: { 'icy-metadata': '1' } });
   assert.equal(res.headers['icy-metaint'], '16000');

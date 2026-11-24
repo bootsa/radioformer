@@ -29,7 +29,7 @@ const LOGIN_PATH = /^\/setupapp\/[A-Za-z0-9_-]+\/asp\/BrowseXML\/loginXML\.asp/;
 const ok = (body: string): XmlResponse => ({ status: 200, contentType: 'text/plain;charset=UTF-8', body });
 
 function stationItem(ctx: XmlContext, s: Station, detail: boolean): Item {
-  const base: Item = { ItemType: 'Station', StationId: s.id, StationName: xmlText(s.name) };
+  const base: Item = { ItemType: 'Station', StationId: s.directoryId || s.id, StationName: xmlText(s.name) };
   if (!detail) return base;
   return {
     ...base,
@@ -78,7 +78,8 @@ export function handleXml(path: string, query: URLSearchParams, ctx: XmlContext)
   const search = query.get('Search');
   if ((searchType === '3' || searchType === '5') && search) {
     const id = /^\d{1,9}$/.test(search) ? Number(search) : NaN;
-    const station = Number.isFinite(id) ? ctx.library.getStation(id) : null;
+    // long ids are those of the original directory; short ones are our own
+    const station = /^\d{10,19}$/.test(search) ? ctx.library.getStationByDirectoryId(search) : Number.isFinite(id) ? ctx.library.getStation(id) : null;
     if (!station) return ok(renderList([previous(ctx, '/?go=initial'), dir(ctx, 'No item found for this ID!', '/?go=initial')]));
     const items: Item[] = [];
     if (station.collection) items.push(previous(ctx, `/list?tid=1&cat=${encodeURIComponent(station.collection)}`));

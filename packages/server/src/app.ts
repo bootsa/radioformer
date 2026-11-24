@@ -43,7 +43,7 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary, deps: 
     // Presets and stations from the radio's original directory use long ids we don't own.
     // They, and any other request to the radio cloud we don't handle, go to the real service.
     const search = url.searchParams.get('Search');
-    const foreignStation = !!search && /^\d+$/.test(search) && !library.getStation(Number(search));
+    const foreignStation = !!search && /^\d+$/.test(search) && !(/^\d{10,19}$/.test(search) ? library.getStationByDirectoryId(search) : library.getStation(Number(search)));
     const res = foreignStation ? null : handleXml(url.pathname, url.searchParams, {
       library,
       url: (p) => `${base}${p}`,

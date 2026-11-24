@@ -5,11 +5,13 @@ import { handleXml, type XmlContext } from './index.ts';
 
 const stations: Station[] = [
   Station.parse({ id: 1000, name: 'FIP', streamUrl: 'https://icecast.radiofrance.fr/fip-hifi.aac', description: 'Eclectic & fresh' }),
+  Station.parse({ id: 1002, name: 'FIP Jazz', streamUrl: 'https://icecast.radiofrance.fr/fipjazz-hifi.aac', directoryId: '4779848458711058' }),
   Station.parse({ id: 1001, name: 'M80', streamUrl: 'https://stream-icy.bauermedia.pt/m80.aac', collection: 'Portugal' }),
 ];
 const library: LibraryReader = {
   listStations: (c) => stations.filter((s) => !c || s.collection === c).sort((a, b) => a.name.localeCompare(b.name)),
   getStation: (id) => stations.find((s) => s.id === id) ?? null,
+  getStationByDirectoryId: (d) => stations.find((s) => s.directoryId === d) ?? null,
   listCollections: () => ['Portugal'],
 };
 const seen: string[] = [];
@@ -75,4 +77,13 @@ test('long lists are paged to protect the radio', () => {
 
 test('paths of other protocols are not ours', () => {
   assert.equal(handleXml('/api/v1/stations', q(''), ctx), null);
+});
+
+test('a station with a directory id is shown, and found, under that id', () => {
+  const list = handleXml('/list', q('tid=1'), ctx)!.body;
+  assert.match(list, /<StationId>4779848458711058<\/StationId>/);
+  assert.doesNotMatch(list, /<StationId>1002<\/StationId>/);
+  const detail = handleXml('/setupapp/Roberts/asp/BrowseXML/Search.asp', q('sSearchtype=3&Search=4779848458711058&mac=e011516159f8bb18bfdaae427f54ac93'), ctx)!.body;
+  assert.match(detail, /FIP Jazz/);
+  assert.match(detail, /<StationId>4779848458711058<\/StationId>/);
 });

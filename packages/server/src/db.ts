@@ -51,6 +51,10 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE station ADD COLUMN title_template TEXT NOT NULL DEFAULT '';
   `,
+  `
+  ALTER TABLE station ADD COLUMN directory_id TEXT NOT NULL DEFAULT '';
+  CREATE UNIQUE INDEX station_directory_id ON station(directory_id) WHERE directory_id <> '';
+  `,
 ];
 
 export function openDb(file: string): DatabaseSync {
