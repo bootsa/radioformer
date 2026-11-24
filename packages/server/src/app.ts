@@ -12,6 +12,7 @@ import { NewStation, type SqliteLibrary } from './library.ts';
 import { MetadataHub } from './metadata/hub.ts';
 import { fetchImage, getDefaultLogo, sha256, toRadioPng } from './logos.ts';
 import { assertPublicUpstream } from './net-guard.ts';
+import { searchDirectory } from './directory.ts';
 import { isRadioHost, passthrough } from './passthrough.ts';
 import { startFacade } from './facade-server.ts';
 import { startUpnpFace } from './upnp/server.ts';
@@ -222,6 +223,13 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary, deps: 
     return { admin: false };
   });
 
+  // Counterparts of a station in the radio's original directory, to give it the same id
+  app.get<{ Querystring: { q?: string } }>('/api/v1/directory/search', async (req, reply) => {
+    const denied = requireAdmin(req);
+    if (denied) return reply.code(config.ADMIN_TOKEN ? 401 : 403).send({ error: denied });
+    const found = await searchDirectory(req.query.q ?? '');
+    return found ?? reply.code(502).send({ error: 'the original directory did not answer' });
+  });
   app.post('/api/v1/stations', async (req, reply) => {
     const denied = requireAdmin(req);
     if (denied) return reply.code(config.ADMIN_TOKEN ? 401 : 403).send({ error: denied });
