@@ -322,12 +322,39 @@ Mobile-first, dark/light, keyboard friendly.
 | M5 | FSAPI session-keeping proxy with SSDP advertisement (8.2 B) | Home Assistant and UNDOK work at the same time through it; notifications reach both |
 | M6 | Optional: AirPlay receiver container feeding the radio (8.2 C) | An iPhone plays to the radio; measured delay documented; no sync claims |
 
+## 11a. Status, November 2026
+
+Built and deployed (one compose service on the Coolify LXC, `rf.yml`): the XML directory with own stations;
+stream proxy with title cleaning and metadata injection; the web remote page; the FSAPI face (port 8082) with a
+menu position per app (NavMultiplexer); an SSDP sidecar so apps find the face; the UPnP renderer face (port 8083);
+the DNS redirect for the radio; a passthrough that sends unknown station ids (old presets, other cloud paths) to
+the original service (Airable); station pictures of the original directory served from a cache; a stations page.
+
+### UPnP renderer face
+
+`packages/server/src/upnp`. It presents a MediaRenderer ("Dancehall+") and stands in front of the radio's own
+renderer (`http://<radio>:8080/dd.xml`). Description and service documents are ours (the service documents are read
+from the radio, so actions match exactly). Commands are passed on to the radio unchanged, except that the radio's own
+renderer does not cope with track details, so those are left out of `SetAVTransportURI`/`SetNextAVTransportURI`.
+Before a new address is handed over, the radio is switched on if needed and put in its music player mode
+(`UPNP_FACE_MODE`, matched on the mode label). Events: one subscription per service to the radio, shared by all apps,
+renewed every 150 s; each app gets the last known state first, then changes. Discovery: the SSDP sidecar advertises the
+root device, the device type and the three services under its own identity (`rendererUuid`).
+Not yet exercised with a real controller (Music Assistant): that needs a cast to the radio.
+
+### Stations with an id from the original directory
+
+A station may carry `directoryId`, the id of its counterpart in Airable. The radio is shown that id (list, detail
+lookup), so a preset keeps working if the radio's DNS falls back to the router and the original service answers.
+Ids are chosen by name search (`/api/v1/directory/search`, which names no radio: it uses an all-zero device id).
+
 ## 12. What already exists
 
 - A working prototype of the metadata proxy (Python, about 200 lines) runs on the Pi at
   `http://192.168.222.241:8090/<name>` for Radio Comercial, M80 and FIP. Its logic and test samples are
   ported into `packages/stream` in M1, and the container is retired afterwards.
-- RadioAPI (PHP) stays up as the live service until M1 is accepted.
+- RadioAPI (PHP) was retired in November 2026: Radioformer is the live directory, and the `radio_dns`
+  container (which points the radio at it) moved into the Radioformer service.
 
 ## 13. Risks and open questions
 
