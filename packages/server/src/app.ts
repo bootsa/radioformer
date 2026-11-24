@@ -12,6 +12,7 @@ import { NewStation, type SqliteLibrary } from './library.ts';
 import { MetadataHub } from './metadata/hub.ts';
 import { fetchImage, getDefaultLogo, sha256, toRadioPng } from './logos.ts';
 import { assertPublicUpstream } from './net-guard.ts';
+import { isRadioHost, passthrough } from './passthrough.ts';
 import { startFacade } from './facade-server.ts';
 import { registerRadioRoutes } from './radio-routes.ts';
 import { RadioManager } from './radios.ts';
@@ -37,7 +38,11 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary, deps: 
   app.addHook('onRequest', async (req, reply) => {
     const url = new URL(req.url, 'http://x');
     const base = baseUrl(req, config);
-    const res = handleXml(url.pathname, url.searchParams, {
+    // Presets and stations from the radio's original directory use long ids we don't own.
+    // They, and any other request to the radio cloud we don't handle, go to the real service.
+    const search = url.searchParams.get('Search');
+    const foreignStation = !!search && /^\d+$/.test(search) && !library.getStation(Number(search));
+    const res = foreignStation ? null : handleXml(url.pathname, url.searchParams, {
       library,
       url: (p) => `${base}${p}`,
       streamUrl: (s) => (proxyThis(s) ? `${base}/s/${s.id}` : s.streamUrl),
@@ -46,7 +51,23 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary, deps: 
         if (/^[0-9a-f]{28,40}$/.test(mac)) library.touchRadio(mac, req.ip);
       },
     });
-    if (!res) return;
+    if (!res) {
+      if (isRadioHost(req.headers.host) && (foreignStation || url.pathname.startsWith('/vtuner/') || url.pathname.startsWith('/setupapp/'))) {
+        const real = await passthrough(req.headers.host!, req.url);
+        if (real) {
+          req.log.info({ path: url.pathname, status: real.status }, 'answered by the real radio service');
+          reply.code(real.status).header('Content-Type', real.contentType).header('Cache-Control', 'no-store');
+          if (real.location) reply.header('Location', real.location);
+          return reply.send(real.body);
+        }
+        if (foreignStation) {
+          return reply.code(200).header('Content-Type', 'text/plain;charset=UTF-8').send(
+            handleXml(url.pathname, new URLSearchParams({ sSearchtype: '3', Search: '0' }), { library, url: (p) => `${base}${p}`, streamUrl: (x) => x.streamUrl, logoUrl: () => '' })?.body ?? '',
+          );
+        }
+      }
+      return;
+    }
     return reply
       .code(res.status)
       .header('Content-Type', res.contentType)
