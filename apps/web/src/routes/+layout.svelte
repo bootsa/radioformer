@@ -30,6 +30,7 @@
 <header class="border-b">
 	<div class="mx-auto flex h-14 max-w-4xl items-center gap-3 px-4">
 		<a href="/" class="flex items-center gap-2 font-semibold"><RadioIcon class="size-5" /> Radioformer</a>
+		<a href="/stations" class="text-sm text-muted-foreground hover:text-foreground">Stations</a>
 		<div class="flex-1"></div>
 		<Button variant="ghost" size="icon" aria-label="Toggle dark mode" onclick={toggleMode}>
 			<SunIcon class="dark:hidden" /><MoonIcon class="hidden dark:block" />

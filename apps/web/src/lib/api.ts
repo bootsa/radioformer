@@ -1,5 +1,14 @@
 import type { EqPreset, Mode, NavItem, NowPlaying, Preset, RadioInfo, RadioStatus, Station } from '@radioformer/core';
 
+/** A station of the radio's original directory. */
+export interface DirectoryStation {
+	id: string;
+	name: string;
+	format: string;
+	location: string;
+	logo: string;
+}
+
 export class ApiError extends Error {
 	status: number;
 	constructor(message: string, status: number) {
@@ -60,6 +69,11 @@ export const api = {
 	menu: (id: number) => request<NavItem[]>(`/api/v1/radios/${id}/menu`),
 	command: (id: number, cmd: Command) => request<{ ok?: boolean; menu?: NavItem[] }>(`/api/v1/radios/${id}/command`, post(cmd)),
 	stations: () => request<Station[]>('/api/v1/stations'),
+	createStation: (s: Omit<Station, 'id'>) => request<Station>('/api/v1/stations', post(s)),
+	updateStation: (id: number, s: Omit<Station, 'id'>) => request<Station>(`/api/v1/stations/${id}`, { method: 'PUT', body: JSON.stringify(s) }),
+	deleteStation: (id: number) => request<void>(`/api/v1/stations/${id}`, { method: 'DELETE' }),
+	setStationLogo: (id: number, url: string) => request<{ logoId: number }>(`/api/v1/stations/${id}/logo`, post({ url })),
+	directorySearch: (q: string) => request<DirectoryStation[]>(`/api/v1/directory/search?q=${encodeURIComponent(q)}`),
 	nowPlaying: (stationId: number) => request<NowPlaying>(`/api/v1/stations/${stationId}/now-playing`)
 };
 
