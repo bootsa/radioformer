@@ -76,6 +76,22 @@ export async function buildApp(config: AppConfig, library: SqliteLibrary, deps: 
       .send(res.body);
   });
 
+  // Station pictures of the radio's original directory (see passthrough); cached in memory
+  const assetCache = new Map<string, { type: string; data: Buffer }>();
+  app.get<{ Params: { '*': string } }>('/assets/*', async (req, reply) => {
+    const path = `/assets/${req.params['*']}`;
+    if (!/^\/assets\/[\w./-]{1,200}$/.test(path) || path.includes('..')) return reply.code(404).send({ error: 'not found' });
+    let hit = assetCache.get(path);
+    if (!hit) {
+      const real = await passthrough('assets.wifiradiofrontier.com', path);
+      if (!real || real.status !== 200 || !real.contentType.startsWith('image/')) return reply.code(404).send({ error: 'not found' });
+      hit = { type: real.contentType, data: real.body };
+      if (assetCache.size >= 500) assetCache.delete(assetCache.keys().next().value!);
+      assetCache.set(path, hit);
+    }
+    return reply.type(hit.type).header('Cache-Control', 'public, max-age=604800').send(hit.data);
+  });
+
   app.get('/media/default.png', async (_req, reply) => reply.type('image/png').header('Cache-Control', 'public, max-age=86400').send(await getDefaultLogo()));
   app.get<{ Params: { id: string } }>('/logo/:id.png', async (req, reply) => {
     const data = /^\d+$/.test(req.params.id) ? library.getLogo(Number(req.params.id)) : null;
